@@ -4,7 +4,7 @@ link-citations: true
 toc: false
 ---
 
-Due date: Sunday December 7th, 2025, by 11:59pm Pacific Time.
+Due date: Sunday December 6th, 2026, by 11:59pm Pacific Time.
 
 **Learning Objective**: To apply the skills learned in
 PM 566 by analyzing and interpreting a dataset of your choice. This should

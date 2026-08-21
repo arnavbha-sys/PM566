@@ -4,7 +4,7 @@
     "href": "schedule.html",
     "title": "Schedule",
     "section": "",
-    "text": "Week\nDate\nTopic\nSlides\nLab\nAssignment\n\n\n\n\n1\n8/29\nIntroduction to Data Science and R\nSlides\nLab\n\n\n\n2\n9/5\nVersion Control & Reproducible Research\nSlides\nLab\n\n\n\n3\n9/12\nExploratory data analysis\nSlides\nLab\nHW1\n\n\n4\n9/19\nData visualization\nSlides\nLab\n\n\n\n5\n9/26\nData Cleaning and Wrangling\nSlides\nLab\nHW2\n\n\n6\n10/3\nText Mining & Sentiment Analysis\nSlides\nLab\n\n\n\n\n10/10\nNO CLASS - FALL RECESS\n\n\nMidterm\n\n\n7\n10/17\nScraping, APIs, and Regular Expressions\nSlides\nLab\n\n\n\n8\n10/24\nEfficiency and High Performance Computing\nSlides\nLab\nHW3\n\n\n9\n10/31\nSQL and Managing Big Data\nSlides\nLab\n\n\n\n10\n11/7\nInteractive Visualization\nSlides\nLab\nHW4\n\n\n11\n11/14\nBuilding a Website with Quarto and GitHub\nSlides\nLab\n\n\n\n12\n11/21\nNonparametric Statistics\n\n\nFinal\n\n\n\n11/28\nNO CLASS - THANKSGIVING\n\n\n\n\n\n13\n12/5\nFinal Project Workshop"
+    "text": "Week\nDate\nTopic\nSlides\nLab\nAssignment\n\n\n\n\n1\n8/26\nIntroduction to Data Science & R\nSlides\nLab\n\n\n\n2\n9/2\nVersion Control & Reproducible Research\nSlides\nLab\n\n\n\n3\n9/9\nExploratory Data Analysis\nSlides\nLab\nHW1\n\n\n4\n9/16\nData Visualization\nSlides\nLab\n\n\n\n5\n9/23\nData Cleaning and Wrangling\nSlides\nLab\nHW2\n\n\n6\n9/30\nText Mining & Sentiment Analysis\nSlides\nLab\n\n\n\n\n10/7\nReview (NO LAB - FALL RECESS)\n\n\nMidterm\n\n\n7\n10/14\nScraping, APIs, & Regular Expressions\nSlides\nLab\n\n\n\n8\n10/21\nEfficiency & High Performance Computing\nSlides\nLab\nHW3\n\n\n9\n10/28\nSQL & Managing Big Data\nSlides\nLab\n\n\n\n10\n11/4\nInteractive Visualization\nSlides\nLab\nHW4\n\n\n11\n11/11\nBuilding a Website (NO CLASS WED - VETERAN’S DAY)\nSlides\nLab\n\n\n\n12\n11/18\nUnsupervised Learning OR Interactive Visualization II\n\n\n\n\n\n\n11/25\nNO CLASS - THANKSGIVING\n\n\nFinal\n\n\n13\n12/2\nNonparametric Statistics"
   },
   {
     "objectID": "syllabus.html",
@@ -1957,28 +1957,28 @@
     "href": "index.html#instructor",
     "title": "PM 566",
     "section": "Instructor",
-    "text": "Instructor\nKelly Street\n\nEmail: kelly.street@usc.edu\nOffice: Soto (SSB) 202V\nOffice Hours: Wednesday 11am - 12pm"
+    "text": "Instructor\nKelly Street\n\nEmail: kelly.street@usc.edu\nOffice: Soto (SSB) 202V\nOffice Hours: Wednesday 3 - 4pm"
   },
   {
     "objectID": "index.html#teaching-assistant",
     "href": "index.html#teaching-assistant",
     "title": "PM 566",
     "section": "Teaching Assistant",
-    "text": "Teaching Assistant\nXuduo Victor Wen\n\nEmail: wenv@usc.edu"
+    "text": "Teaching Assistant\nTBD\n\nEmail: TBD"
   },
   {
     "objectID": "assignments/hw3.html",
     "href": "assignments/hw3.html",
     "title": "Assignment 3 - Text Mining",
     "section": "",
-    "text": "This assignment is due by 11:59pm Pacific Time on Friday, November 7th, 2025."
+    "text": "This assignment is due by 11:59pm Pacific Time on Friday, November 6th, 2026."
   },
   {
     "objectID": "assignments/hw3.html#due-date",
     "href": "assignments/hw3.html#due-date",
     "title": "Assignment 3 - Text Mining",
     "section": "",
-    "text": "This assignment is due by 11:59pm Pacific Time on Friday, November 7th, 2025."
+    "text": "This assignment is due by 11:59pm Pacific Time on Friday, November 6th, 2026."
   },
   {
     "objectID": "assignments/hw3.html#text-mining",
@@ -1999,21 +1999,21 @@
     "href": "assignments/hw2.html",
     "title": "Assignment 2 - Data Wrangling, EDA, and Visualization",
     "section": "",
-    "text": "This assignment is due by 11:59pm Pacific Time on Friday, October 10th Wednesday, October 15th, 2025."
+    "text": "This assignment is due by 11:59pm Pacific Time on Friday, October 9th, 2026."
   },
   {
     "objectID": "assignments/hw2.html#due-date",
     "href": "assignments/hw2.html#due-date",
     "title": "Assignment 2 - Data Wrangling, EDA, and Visualization",
     "section": "",
-    "text": "This assignment is due by 11:59pm Pacific Time on Friday, October 10th Wednesday, October 15th, 2025."
+    "text": "This assignment is due by 11:59pm Pacific Time on Friday, October 9th, 2026."
   },
   {
     "objectID": "assignments/final.html",
     "href": "assignments/final.html",
     "title": "Final Project",
     "section": "",
-    "text": "Due date: Sunday December 7th, 2025, by 11:59pm Pacific Time.\nLearning Objective: To apply the skills learned in PM 566 by analyzing and interpreting a dataset of your choice. This should include at least one clear, overarching research question to guide your analysis. Remember that the answer to most worthwhile research questions is complicated, so don’t be afraid to add follow-up analysis that clarifies your findings or deepens your understanding."
+    "text": "Due date: Sunday December 6th, 2026, by 11:59pm Pacific Time.\nLearning Objective: To apply the skills learned in PM 566 by analyzing and interpreting a dataset of your choice. This should include at least one clear, overarching research question to guide your analysis. Remember that the answer to most worthwhile research questions is complicated, so don’t be afraid to add follow-up analysis that clarifies your findings or deepens your understanding."
   },
   {
     "objectID": "assignments/final.html#deliverables",
@@ -2384,28 +2384,28 @@
     "href": "assignments/hw1.html",
     "title": "Assignment 1 - Exploratory Data Analysis",
     "section": "",
-    "text": "Due Date\nThis assignment is due by 11:59pm Pacific Time on Friday, September 26th, 2025.\n\n\nLearning Goals\n\nDownload, read, and get familiar with an external dataset.\nStep through the EDA “checklist” presented in class\nPractice making exploratory plots\n\n\n\nAssignment Description\nWe will work with air pollution data from the U.S. Environmental Protection Agency (EPA). The EPA has a national monitoring network of air pollution sites that measure particulate matter (PM) concentrations. A primer on particulate matter air pollution can be found here.\nThe primary question you will answer is whether daily concentrations of PM\\(_{2.5}\\) (particulate matter air pollution with aerodynamic diameter less than 2.5 \\(\\mu\\)m) decreased in California over the 20 years spanning from 2002 to 2022.\nYour assignment should be completed in Quarto and all code should be included.\n\n\nSteps\n\n(30 points) Given the formulated question from the assignment description, you will now conduct EDA Checklist items 1-5. First, download 2002 and 2022 data for all sites in California from the EPA Air Quality Data website, then read the data into R. For each of the two datasets, check the dimensions, headers, footers, variable names and variable types. Check the distribution of the key variable we are analyzing (PM\\(_{2.5}\\)). Write up a summary of all of your findings.\n(10 points) Combine the two years of data into one data frame. Use the Date variable to create a new column for year, which will serve as an identifier. Change the names of the key variables so that they are easier to refer to in your code.\n(20 points) Create a basic map (or maps) in either leaflet or ggplot showing the locations of the monitoring sites, using different colors for each year. Summarize the spatial distribution of the sites. Does this distribution change from 2002 to 2022?\n(10 points) Check for any data issues such as missing or implausible values of PM\\(_{2.5}\\) in the combined dataset. Calculate the proportion of missing/implausible values for each year and report any temporal patterns you see in these observations.\n(30 points) Explore the main question of interest at three different levels of spatial resolution. Create data visualizations (e.g. boxplots, histograms, line plots, violin plots) and summary statistics that best suit each level of the analysis. Be sure to write up explanations of what you observe at each level.\n\n\nLevel 1: State. Examine the primary question for the entire state.\nLevel 2: County. Examine the primary question for every county in California.\nLevel 3: City. Restrict the data to sites in Los Angeles county and examine the primary question for every site.\n\nReminder: after you upload your final rendered document to GitHub, you should download it to make sure that it looks right! If you haven’t included embed-resources: true in the YAML header, none of your figures will show up!\nAnother reminder: GitHub is not (generally) intended for sharing data, so if you upload the dataset to your GitHub repo, you will lose 5 points. You can avoid this problem by storing the data somewhere else on your local machine (outside of your repo), or by adding the data file to your .gitignore file.\n\nThis homework has been adapted from the case study in Roger Peng’s Exploratory Data Analysis with R"
+    "text": "Due Date\nThis assignment is due by 11:59pm Pacific Time on Friday, September 25th, 2026.\n\n\nLearning Goals\n\nDownload, read, and get familiar with an external dataset.\nStep through the EDA “checklist” presented in class\nPractice making exploratory plots\n\n\n\nAssignment Description\nWe will work with air pollution data from the U.S. Environmental Protection Agency (EPA). The EPA has a national monitoring network of air pollution sites that measure particulate matter (PM) concentrations. A primer on particulate matter air pollution can be found here.\nThe primary question you will answer is whether daily concentrations of PM\\(_{2.5}\\) (particulate matter air pollution with aerodynamic diameter less than 2.5 \\(\\mu\\)m) decreased in California over the 20 years spanning from 2002 to 2022.\nYour assignment should be completed in Quarto and all code should be included.\n\n\nSteps\n\n(30 points) Given the formulated question from the assignment description, you will now conduct EDA Checklist items 1-5. First, download 2002 and 2022 data for all sites in California from the EPA Air Quality Data website, then read the data into R. For each of the two datasets, check the dimensions, headers, footers, variable names and variable types. Check the distribution of the key variable we are analyzing (PM\\(_{2.5}\\)). Write up a summary of all of your findings.\n(10 points) Combine the two years of data into one data frame. Use the Date variable to create a new column for year, which will serve as an identifier. Change the names of the key variables so that they are easier to refer to in your code.\n(20 points) Create a basic map (or maps) in either leaflet or ggplot showing the locations of the monitoring sites, using different colors for each year. Summarize the spatial distribution of the sites. Does this distribution change from 2002 to 2022?\n(10 points) Check for any data issues such as missing or implausible values of PM\\(_{2.5}\\) in the combined dataset. Calculate the proportion of missing/implausible values for each year and report any temporal patterns you see in these observations.\n(30 points) Explore the main question of interest at three different levels of spatial resolution. Create data visualizations (e.g. boxplots, histograms, line plots, violin plots) and summary statistics that best suit each level of the analysis. Be sure to write up explanations of what you observe at each level.\n\n\nLevel 1: State. Examine the primary question for the entire state.\nLevel 2: County. Examine the primary question for every county in California.\nLevel 3: City. Restrict the data to sites in Los Angeles county and examine the primary question for every site.\n\nReminder: after you upload your final rendered document to GitHub, you should download it to make sure that it looks right! If you haven’t included embed-resources: true in the YAML header, none of your figures will show up!\nAnother reminder: GitHub is not (generally) intended for sharing data, so if you upload the dataset to your GitHub repo, you will lose 5 points. You can avoid this problem by storing the data somewhere else on your local machine (outside of your repo), or by adding the data file to your .gitignore file.\n\nThis homework has been adapted from the case study in Roger Peng’s Exploratory Data Analysis with R"
   },
   {
     "objectID": "assignments/midterm.html",
     "href": "assignments/midterm.html",
     "title": "Midterm Project",
     "section": "",
-    "text": "Due Sunday, October 26th, 2024 by 11:59pm Pacific Time.\nLearning Objective: To apply the skills learned in PM 566 (through Week 6) by analyzing and interpreting a dataset of your choice.\nNarrative: As we have discussed in class, the practice of data science requires both quantitative skills and qualitative knowledge of the domain from which the data was collected. The first step in any data analysis is to have a dataset for which you have formulated an interesting question. If you do not have a dataset to work with, you may choose one from our list of suggestions. With your dataset, formulate a clear and concise question to answer and conduct data wrangling, exploratory data analysis, and data visualization to explore/answer this question.\nDeliverable: A written report generated in Quarto (HTML or PDF) with embedded tables and figures that is submitted to a project-specific GitHub repository that you create. The report should have the following sections:\n\nIntroduction - provide background on your dataset and formulated question\nData Preparation - how and where the data were acquired, how you cleaned and wrangled the data\nExploratory Analysis - dataset characteristics, variables included, distribution of key variables\nPreliminary Results - analysis of the primary research question and any subsequent follow-up questions, including summary statistics in tabular form and publication-quality figures (look at the kable() function from knitr for making nice tables)\na brief Conclusion - summary of what you found in the data\n\nIn your report, please do not include any unformatted text output (e.g. output from head(), str(), print(), etc.). You should summarize these aspects of your data within the text, figures, and/or tables.\nNote that you cannot use the same dataset on both the Midterm and Final. So if you came into this class with a dataset that you wanted to analyze, you may want to save that for later."
+    "text": "Due Sunday, October 25th, 2026 by 11:59pm Pacific Time.\nLearning Objective: To apply the skills learned in PM 566 (through Week 6) by analyzing and interpreting a dataset of your choice.\nNarrative: As we have discussed in class, the practice of data science requires both quantitative skills and qualitative knowledge of the domain from which the data was collected. The first step in any data analysis is to have a dataset for which you have formulated an interesting question. If you do not have a dataset to work with, you may choose one from our list of suggestions. With your dataset, formulate a clear and concise question to answer and conduct data wrangling, exploratory data analysis, and data visualization to explore/answer this question.\nDeliverable: A written report generated in Quarto (HTML or PDF) with embedded tables and figures that is submitted to a project-specific GitHub repository that you create. The report should have the following sections:\n\nIntroduction - provide background on your dataset and formulated question\nData Preparation - how and where the data were acquired, how you cleaned and wrangled the data\nExploratory Analysis - dataset characteristics, variables included, distribution of key variables\nPreliminary Results - analysis of the primary research question and any subsequent follow-up questions, including summary statistics in tabular form and publication-quality figures (look at the kable() function from knitr for making nice tables)\na brief Conclusion - summary of what you found in the data\n\nIn your report, please do not include any unformatted text output (e.g. output from head(), str(), print(), etc.). You should summarize these aspects of your data within the text, figures, and/or tables.\nNote that you cannot use the same dataset on both the Midterm and Final. So if you came into this class with a dataset that you wanted to analyze, you may want to save that for later."
   },
   {
     "objectID": "assignments/hw4.html",
     "href": "assignments/hw4.html",
     "title": "Assignment 4 - HPC and SQL",
     "section": "",
-    "text": "This assignment is due by 11:59pm Pacific Time on Friday, November 21st, 2025.\nThe learning objectives are to write faster code for a computational task requiring a loop and to implement some queries and basic data wrangling in SQL."
+    "text": "This assignment is due by 11:59pm Pacific Time on Friday, November 20th, 2026.\nThe learning objectives are to write faster code for a computational task requiring a loop and to implement some queries and basic data wrangling in SQL."
   },
   {
     "objectID": "assignments/hw4.html#due-date",
     "href": "assignments/hw4.html#due-date",
     "title": "Assignment 4 - HPC and SQL",
     "section": "",
-    "text": "This assignment is due by 11:59pm Pacific Time on Friday, November 21st, 2025.\nThe learning objectives are to write faster code for a computational task requiring a loop and to implement some queries and basic data wrangling in SQL."
+    "text": "This assignment is due by 11:59pm Pacific Time on Friday, November 20th, 2026.\nThe learning objectives are to write faster code for a computational task requiring a loop and to implement some queries and basic data wrangling in SQL."
   },
   {
     "objectID": "assignments/hw4.html#question-4-10-points",

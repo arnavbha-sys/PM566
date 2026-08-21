@@ -16,3 +16,5 @@ vegayon-noaa-api-token.txt
 ncbi-api-key.txt
 
 /.quarto/
+
+**/*.quarto_ipynb
