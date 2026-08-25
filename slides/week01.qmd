@@ -21,7 +21,7 @@ Kelly Street
 
 - Assistant Professor of Biostatistics
 - Department of Population and Public Health Sciences
-- Office hours: Wednesday 11am, SSB 202V
+- Office hours: 3pm Wed. OR 2pm Thur. / SSB 202V
 
 ---
 
@@ -64,10 +64,12 @@ collection of knowledge about
 
 - Data science is an exciting discipline that allows you to turn raw data into understanding, insight, and knowledge.
 
-![](img/data-science.png){fig-align="center"}
+![](img/data-science-2.png){fig-align="center"}
 
 
 ---
+
+# Before AI:
 
 <img src="img/demand.png" style="width:800px;">
 
@@ -108,6 +110,65 @@ This course will focus on applications in Public Health, but the skills you lear
 ---
 
 ![](https://vdsbook.com/Figures-External/intro/venn_diagram.png){fig-align="center"}
+
+---
+
+# What is data?
+
+Almost anything can be data:
+
+ - Quantitative observations
+ - Qualitative responses
+ - Locations or shapes
+ - Colors
+ - Free-form text
+
+We'll explore how to work with all of these throughout the semester! But for now, we'll focus on "tidy" data.
+
+---
+
+# Tidy Data
+
+We use the term "tidy data" to refer to tabular datasets that are easily
+represented by a grid of values. Each row represents a single observational unit
+and each column represents a measured variable.
+
+```{r, echo=FALSE}
+library(palmerpenguins)
+as.data.frame(penguins)
+```
+
+---
+
+## How do computers represent data?
+
+One of the oldest and most common ways to store tabular data on a computer is
+with a file type called "comma-separated values" or CSV. These files typically
+use the suffice `.csv` and they store one observation per line, with columns
+separated by commas.
+
+```
+species,island,bill_length_mm,bill_depth_mm,flipper_length_mm
+Adelie,Torgersen,39.1,18.7,181
+Adelie,Torgersen,39.5,17.4,186
+Adelie,Torgersen,40.3,18.0,195
+Adelie,Torgersen,NA,NA,NA
+Adelie,Torgersen,36.7,19.3,193
+Adelie,Torgersen,39.3,20.6,190
+Adelie,Torgersen,38.9,17.8,181
+Adelie,Torgersen,39.2,19.6,195
+```
+
+---
+
+## How do computers represent data?
+
+Looking ahead to working with R, we will typically be working with objects
+called "data frames".
+
+```{r}
+as.data.frame(penguins)
+```
 
 ---
 
