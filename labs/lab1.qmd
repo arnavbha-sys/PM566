@@ -262,7 +262,7 @@ Here is a Quarto [cheatsheet](https://rstudio.github.io/cheatsheets/quarto.pdf) 
 
 
 # Submitting your lab
-Since we have not covered GitHub yet, for this week (and ONLY this week) you may submit a fully rendered HTML (or PDF) version of your completed lab by emailing it to wenv@usc.edu.
+Since we have not covered GitHub yet, for this week (and ONLY this week) you may submit a fully rendered HTML (or PDF) version of your completed lab by emailing it to kelly.street@usc.edu.
 
 
 
