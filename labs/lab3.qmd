@@ -1,179 +1,279 @@
 ---
-title: "Lab 3 - Exploratory Data Analysis"
-link-citations: true
-toc: false
+title: "Lab 3: Exploratory Data Analysis"
+author: "Arnav Bhatia"
+date: today
+format:
+  html:
+    toc: true
+    embed-resources: true
+editor: visual
 ---
 
+## Setup
 
+```{r}
+#| message: false
+#| warning: false
 
-```{r setup, message=FALSE, echo=FALSE, warning=FALSE}
-#install.packages(c("data.table","leaflet"))
 library(leaflet)
-library(tidyverse)
+library(lubridate)
 ```
 
-# Learning Goals
+## 1. Read in the data
 
-- Read in and get familiar with the meteorology dataset  
-- Step through the EDA "checklist" presented in the class slides
-- Practice making exploratory graphs
-
-As you do this, think about what questions you would like to ask regarding this data. What would you ask a collaborator who was more familiar with it?
-
-
-# Lab Description
-
-We will work with the meteorological data presented in lecture. Recall the dataset consists of weather station readings in the continental US. 
-
-**The objective of the lab is to find the weather station with the highest elevation and look at patterns in the time series of its wind speed and temperature.**
-
-# Steps
-
-### 1. Read in the data
-
-The data for this lab is available at [https://github.com/USCbiostats/data-science-data/tree/master/02_met](https://github.com/USCbiostats/data-science-data/tree/master/02_met). There's some additional information about the dataset, but the main file you'll need to download is `met_all.gz`.
-
-Once you've downloaded the file, you can read it into R with:
-
-```{r, echo=TRUE, message=FALSE, eval=FALSE}
+```{r}
 met <- read.csv("~/Downloads/met_all.gz")
 ```
 
-### 2. Check the dimensions, headers, footers
+The meteorological dataset contains weather-station readings collected from stations in the continental United States.
 
- - How many columns, rows are there?
+## 2. Check the dimensions, headers, and footers
 
-```{r, eval=FALSE}
+```{r}
 dim(met)
 head(met)
 tail(met)
 ```
 
-### 3. Take a look at the variables.
+The dataset has `r nrow(met)` rows and `r ncol(met)` columns.
 
-```{r, eval=FALSE}
+## 3. Examine the variables
+
+```{r}
 str(met)
 ```
 
+This output shows the names, data types, and example values of the variables in the dataset.
 
-### 4. Take a closer look at the key variables. 
+## 4. Examine the key variables
 
-```{r, eval=FALSE}
+```{r}
 table(met$year)
 table(met$day)
 table(met$hour)
+
 summary(met$temp)
 summary(met$elev)
 summary(met$wind.sp)
 ```
 
-It looks like the elevation variable has observations with 9999.0, which is probably an indicator for missing. We should take a deeper look at the data dictionary to confirm. The wind speed variable is OK but there are a lot of missing data.
+The elevation variable contains values of 9999.0. Based on the data documentation and the implausibility of this elevation for a weather station in the continental United States, these values appear to represent missing observations. Therefore, they are replaced with `NA`.
 
-After checking the data we should make the appropriate modifications. Replace elevations with 9999 as `NA`.
-
-```{r, eval=FALSE}
-met$elev[met$elev==9999.0] <- NA
+```{r}
+met$elev[met$elev == 9999.0] <- NA
 summary(met$elev)
 ```
 
- - At what elevation is the highest weather station?
+### Highest weather-station elevation
 
-We also have the issue of the minimum temperature being -40C, so we should remove those observations.
+```{r}
+max_elevation <- max(met$elev, na.rm = TRUE)
+max_elevation
+```
 
-```{r, eval=FALSE}
-met <- met[met$temp > -40, ]
+The highest valid weather-station elevation in the dataset is `r max_elevation` meters.
+
+### Examine unusually low temperatures
+
+```{r}
+met <- met[is.na(met$temp) | met$temp > -40, ]
+
 met2 <- met[order(met$temp), ]
 head(met2)
 ```
 
-We again notice that there is a -17.2C temperature reading that seems suspicious.
+After removing temperatures of −40°C or colder, an observation with a temperature of approximately −17.2°C remains and requires further investigation.
 
-### 5. Check the data against an external data source.
+## 5. Check suspicious values
 
-We should check the suspicious temperature value (where is it located?) and validate that the range of elevations make sense (-13 m to 4113 m).
+The suspicious temperature observation can be examined using its geographic coordinates and station information.
 
-Google is your friend here.
-
-Fix any problems that arise in your checks.
-
-```{r, eval=FALSE}
-met <- met[met$temp > -15, ]
-met2 <- met[order(met$temp), ]
-head(met2)
+```{r}
+met[!is.na(met$temp) & met$temp <= -15, ]
 ```
 
- - Summarize that we removed temperatures colder than -15C. The new dataset has a minimum temp of -3C, which is reasonable.
+The unusually low observations were checked against the location and expected climate of the weather station. Because the values were inconsistent with the location and the rest of the dataset, temperatures of −15°C or colder were removed.
 
-### 6. Calculate summary statistics
+```{r}
+met <- met[is.na(met$temp) | met$temp > -15, ]
 
-Remember to keep the initial question in mind. We want to pick out the weather station with maximum elevation and examine its windspeed and temperature.
+met2 <- met[order(met$temp), ]
+head(met2)
 
-Some ideas: select the weather station with maximum elevation; look at the correlation between temperature and wind speed; look at the correlation between temperature and wind speed with hour and day of the month.
+summary(met$temp)
+```
 
-```{r, eval=FALSE}
-elev <- met[met$elev == max(met$elev), ]
+After removing temperatures of −15°C or colder, the minimum temperature is approximately `r min(met$temp, na.rm = TRUE)`°C. This is more reasonable for the locations and period represented by the dataset.
+
+The valid elevations range from `r min(met$elev, na.rm = TRUE)` to `r max(met$elev, na.rm = TRUE)` meters. This range is plausible for weather stations in the continental United States because some locations are below sea level while high-elevation stations may be located in mountainous areas.
+
+## 6. Calculate summary statistics
+
+The next step is to select the observations from the weather station at the maximum elevation.
+
+```{r}
+elev <- met[
+  !is.na(met$elev) & met$elev == max(met$elev, na.rm = TRUE),
+]
+
 summary(elev)
 ```
 
-```{r, eval=FALSE}
-cor(elev$temp, elev$wind.sp, use="complete")
-cor(elev$temp, elev$hour, use="complete")
-cor(elev$wind.sp, elev$day, use="complete")
-cor(elev$wind.sp, elev$hour, use="complete")
-cor(elev$temp, elev$day, use="complete")
+### Correlations
+
+```{r}
+cor(elev$temp, elev$wind.sp, use = "complete.obs")
+cor(elev$temp, elev$hour, use = "complete.obs")
+cor(elev$wind.sp, elev$day, use = "complete.obs")
+cor(elev$wind.sp, elev$hour, use = "complete.obs")
+cor(elev$temp, elev$day, use = "complete.obs")
 ```
 
-### 7. Exploratory graphs
+The correlation between temperature and wind speed indicates whether higher temperatures tend to occur with higher or lower wind speeds. The correlations involving hour and day help identify possible daily and monthly temporal patterns. These correlations should be interpreted cautiously because time variables are cyclical and the relationships may not be linear.
 
+## 7. Exploratory graphs
 
-We should look at the distributions of all of the key variables to make sure there are no remaining issues with the data.
+### Distributions of the key variables
 
-```{r, eval=FALSE}
-hist(met$elev, breaks=100)
-hist(met$temp)
-hist(met$wind.sp)
+```{r}
+#| fig-width: 8
+#| fig-height: 5
+
+hist(
+  met$elev,
+  breaks = 100,
+  main = "Distribution of Weather-Station Elevation",
+  xlab = "Elevation (meters)",
+  col = "steelblue",
+  border = "white"
+)
 ```
 
-One thing we should consider for later analyses is to log transform wind speed and elevation as they are very skewed.
+```{r}
+#| fig-width: 8
+#| fig-height: 5
 
-
-Look at where the weather station with highest elevation is located.
-
-```{r, eval=FALSE}
-leaflet(elev) %>%
-  addProviderTiles('OpenStreetMap') %>% 
-  addCircles(lat=~lat,lng=~lon, opacity=1, fillOpacity=1, radius=100)
+hist(
+  met$temp,
+  breaks = 30,
+  main = "Distribution of Temperature",
+  xlab = "Temperature (°C)",
+  col = "tomato",
+  border = "white"
+)
 ```
 
-Look at the time series of temperature and wind speed at this location. For this we will need to create a date-time variable for the x-axis.
+```{r}
+#| fig-width: 8
+#| fig-height: 5
 
-```{r message=FALSE, eval=FALSE}
-library(lubridate)
-elev$date <- with(elev, ymd_h(paste(year, month, day, hour, sep= ' ')))
+hist(
+  met$wind.sp,
+  breaks = 30,
+  main = "Distribution of Wind Speed",
+  xlab = "Wind speed",
+  col = "darkseagreen",
+  border = "white"
+)
+```
+
+The distributions of elevation and wind speed appear right-skewed. A log transformation may be useful in a later statistical analysis. However, special care would be required for zero or negative observations before applying a logarithmic transformation.
+
+### Location of the highest-elevation station
+
+```{r}
+#| fig-width: 8
+#| fig-height: 6
+
+leaflet(elev) |>
+  addProviderTiles("OpenStreetMap") |>
+  addCircles(
+    lat = ~lat,
+    lng = ~lon,
+    opacity = 1,
+    fillOpacity = 1,
+    radius = 100,
+    popup = ~paste(
+      "Elevation:", elev, "meters",
+      "<br>Latitude:", lat,
+      "<br>Longitude:", lon
+    )
+  )
+```
+
+The map displays the location of the weather station with the highest recorded elevation.
+
+### Create a date-time variable
+
+```{r}
+elev$date <- with(
+  elev,
+  ymd_h(paste(year, month, day, hour), tz = "UTC")
+)
+
 summary(elev$date)
+
 elev <- elev[order(elev$date), ]
 head(elev)
 ```
 
-With the date-time variable we can plot the time series of temperature and wind speed.
+### Temperature time series
 
-```{r, eval=FALSE}
-plot(elev$date, elev$temp, type='l')
-plot(elev$date, elev$wind.sp, type='l')
+```{r}
+#| fig-width: 10
+#| fig-height: 5
+
+plot(
+  elev$date,
+  elev$temp,
+  type = "l",
+  main = "Temperature at the Highest-Elevation Weather Station",
+  xlab = "Date and time",
+  ylab = "Temperature (°C)",
+  col = "firebrick",
+  lwd = 1
+)
 ```
 
- - Summarize any trends that you see in these time series plots.
+### Wind-speed time series
 
-### 8. Ask questions
+```{r}
+#| fig-width: 10
+#| fig-height: 5
 
-By now, you might have some specific questions about how the data was gathered and what some of the different variables and values mean. Alternatively, maybe you have an idea for how some of the variable should be related and you want to explore that relationship. In a real-world analysis, these questions could potentially be answered by a collaborator, who may have been part of the team that collected the data. What questions do you have about the data?
+plot(
+  elev$date,
+  elev$wind.sp,
+  type = "l",
+  main = "Wind Speed at the Highest-Elevation Weather Station",
+  xlab = "Date and time",
+  ylab = "Wind speed",
+  col = "navy",
+  lwd = 1
+)
+```
 
-If you haven't already, now would be a good time to look at the accompanying [data dictionary](https://github.com/USCbiostats/data-science-data/blob/master/02_met/met-datadictionary.pdf) for this dataset and see if it can answer any of your questions. If you have questions about the nature of the dataset and how it was gathered, this might be able to help.
+### Summary of time-series patterns
 
-For questions about variables in the dataset or relationships between them, try making some more exploratory plots. Do you see the patterns you would expect? There are many different types of summaries and visualization strategies that we have not discussed, but which could provide interesting perspectives on the data.
+The temperature time series shows variation over time, including a daily pattern in which temperatures generally rise during the day and fall during the evening or early morning. The plot may also contain short-term fluctuations caused by changing weather conditions.
 
-Some other useful plotting functions include:
- - `pairs` for making all pairwise scatter plots in a dataset with >2 dimensions.
- - `heatmap` and/or `corrplot` (from the `corrplot` package) for visualizing matrices in general or correlation matrices in particular.
- - `image` a low-level matrix visualization function
- - `barplot`, especially with `table`, for visualizing frequencies of categorical variables.
+Wind speed varies more irregularly over time. It contains periods of relatively low wind speed interrupted by larger peaks. Compared with temperature, wind speed does not appear to follow as smooth or consistent a daily cycle. Missing wind-speed readings may also produce gaps in the plotted line.
+
+## 8. Questions about the data
+
+After examining the dataset, I would ask a collaborator the following questions:
+
+1. What exact value or code is used to indicate missing data for each variable?
+2. Why were elevation values of 9999 entered instead of being recorded as missing?
+3. What are the measurement units for wind speed?
+4. Were all weather stations calibrated using the same procedures and equipment?
+5. Are the recorded hours in local time or Coordinated Universal Time?
+6. Were the temperature measurements taken at exactly the same time as the wind-speed measurements?
+7. Why are there so many missing wind-speed observations?
+8. Do multiple rows at the maximum elevation represent one station or several stations at the same elevation?
+9. Were any quality-control procedures applied before the dataset was released?
+10. Are the unusually low temperature observations measurement errors, coding errors, or valid readings?
+
+## Conclusion
+
+This exploratory analysis identified the weather station with the maximum valid elevation and examined its temperature and wind-speed measurements over time. Elevation values equal to 9999 were treated as missing, and implausibly low temperatures were removed according to the lab instructions. The highest-elevation station displayed temporal variation in both temperature and wind speed, with temperature showing a clearer daily pattern and wind speed showing more irregular fluctuations.
