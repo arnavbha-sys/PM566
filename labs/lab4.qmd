@@ -1,212 +1,513 @@
 ---
-title: "Lab 4 - Data Visualization"
-link-citations: true
-toc: false
+title: "Lab 4 — Data Visualization"
+author: "Your Name"
+date: today
+format:
+  html:
+    toc: true
+    code-fold: false
+    embed-resources: true
+execute:
+  warning: false
+  message: false
 ---
 
-```{r, echo = FALSE}
-# Set to TRUE if you want the blocks to be evaluated 
-EVAL <- FALSE
-ECHO <- EVAL
+## Setup
+
+This report examines the association between weekly average dew point and wind speed in four regions of the continental United States and by elevation category.
+
+If needed, run the following command once in the R console before rendering this document:
+
+```{r}
+#| eval: false
+install.packages(c("tidyverse", "leaflet", "Hmisc", "ggforce"))
 ```
 
+```{r}
+#| label: setup
 
-```{r setup, message=FALSE, echo = ECHO, warning=FALSE, eval = EVAL}
-#install.packages(c("leaflet"))
-library(leaflet)
 library(tidyverse)
+library(leaflet)
+library(Hmisc)
+library(ggforce)
+
+theme_set(theme_bw(base_size = 12))
+
+region_colors <- c(
+  "NW" = "#1B9E77",
+  "SW" = "#D95F02",
+  "NE" = "#7570B3",
+  "SE" = "#E7298A"
+)
 ```
 
-# Learning Goals
+## 1. Read in the data
 
-- Read in and prepare the meteorological dataset
-- Create several graphs with different `geoms()` in `ggplot2`
-- Create a facet graph
-- Customize your plots
-- Create a detailed map
+```{r}
+#| label: import-data
 
+data_url <- paste0(
+  "https://raw.githubusercontent.com/USCbiostats/",
+  "data-science-data/master/02_met/met_all.gz"
+)
 
-# Lab Description
-
-We will again work with the meteorological data presented in lecture.
-
-**The objective of the lab is to examine the association between weekly average dew point and wind speed in four regions of the US and by elevation.**
-
-Per [Wikipedia](https://en.wikipedia.org/wiki/Dew_point): "The dew point of a
-given body of air is the temperature to which it must be cooled to become
-saturated with water vapor. This temperature depends on the pressure and water
-content of the air."
-
-Again, feel free to supplement your knowledge of this dataset by checking out
-the [data
-dictionary](https://github.com/USCbiostats/data-science-data/blob/master/02_met/met-datadictionary.pdf).
-
-
-# Steps
-
-### 1. Read in the data
-
-First download and then read in with `read.csv()`
-
-```{r, echo = TRUE, message=FALSE, eval = EVAL}
-if (!file.exists("met_all.gz"))
+if (!file.exists("met_all.gz")) {
   download.file(
-    url = "https://raw.githubusercontent.com/USCbiostats/data-science-data/master/02_met/met_all.gz",
+    url = data_url,
     destfile = "met_all.gz",
-    method   = "libcurl",
-    timeout  = 60
-    )
+    method = "libcurl",
+    timeout = 60
+  )
+}
+
 met <- read.csv("met_all.gz")
+
+dim(met)
 ```
 
-### 2. Prepare the data
+The original data contain `r format(nrow(met), big.mark = ",")` hourly observations and `r ncol(met)` variables.
 
-- Remove temperatures less than -17C
-- Make sure there is no missing data in the key variables coded as 9999, 999, etc.
-- Generate a date variable using the functions `as.Date()` (hint: You will need the following to create a date `paste(year, month, day, sep = "-")`).
-- Subset the data to keep only the observations from the first week (ie. first 7 days) of the month.
-- Compute the mean by station of the variables `temp`, `rh`, `wind.sp`, `vis.dist`, `dew.point`, `lat`,
-`lon`, and `elev`.
-- Create a region variable for NW, SW, NE, SE based on `lon` = $-98.00$ and `lat` = $39.71$ degrees
-- Create a categorical variable for elevation as in the lecture slides
+## 2. Prepare the data
 
-```{r, eval = EVAL, echo = ECHO}
-met <- met[met$temp > -17, ]
-met$elev[met$elev == 9999.0] <- NA
-met$date <- as.Date(paste(met$year, met$month, met$day, sep = "-"))
-met <- met[met$day <= 7, ]
+The cleaning steps below replace documented numeric missing-value codes with `NA`, remove temperatures below -17°C, create a date, retain the first seven days of the month, and calculate one weekly average for each station.
 
-met_avg <- summarize(met,
-                     temp = mean(temp, na.rm=TRUE), 
-                     rh = mean(rh, na.rm=TRUE),
-                     wind.sp = mean(wind.sp, na.rm=TRUE), 
-                     vis.dist = mean(vis.dist, na.rm=TRUE),
-                     dew.point = mean(dew.point, na.rm=TRUE),
-                     lat = mean(lat, na.rm=TRUE),
-                     lon = mean(lon, na.rm=TRUE),
-                     elev = mean(elev, na.rm=TRUE),
-                     .by="USAFID")
+```{r}
+#| label: clean-data
 
-met_avg$elev_cat <- ifelse(met_avg$elev> 252, "high", "low")
+key_variables <- c(
+  "temp", "rh", "wind.sp", "vis.dist",
+  "dew.point", "lat", "lon", "elev"
+)
 
-met_avg$region <- ifelse(met_avg$lon > -98 & met_avg$lat >39.71, "north east",
-                         ifelse(met_avg$lon > -98 & met_avg$lat < 39.71, "south east",
-                                ifelse(met_avg$lon < -98 & met_avg$lat >39.71, "north west", "south west")))
+missing_codes <- c(999, 9999, 99999, 999999)
 
-table(met_avg$region)
+met_clean <- met |>
+  mutate(
+    across(
+      all_of(key_variables),
+      ~ replace(.x, .x %in% missing_codes, NA_real_)
+    ),
+    date = as.Date(paste(year, month, day, sep = "-"))
+  ) |>
+  filter(!is.na(temp), temp >= -17, day <= 7)
 
+met_avg <- met_clean |>
+  group_by(USAFID) |>
+  summarise(
+    across(
+      all_of(key_variables),
+      ~ mean(.x, na.rm = TRUE)
+    ),
+    .groups = "drop"
+  ) |>
+  mutate(
+    # mean(..., na.rm = TRUE) returns NaN when a group is entirely missing.
+    across(all_of(key_variables), ~ replace(.x, is.nan(.x), NA_real_)),
+    region = case_when(
+      lon <= -98 & lat >= 39.71 ~ "NW",
+      lon <= -98 & lat <  39.71 ~ "SW",
+      lon >  -98 & lat >= 39.71 ~ "NE",
+      lon >  -98 & lat <  39.71 ~ "SE",
+      TRUE ~ NA_character_
+    ),
+    elev_cat = case_when(
+      elev <= 252 ~ "Low",
+      elev > 252  ~ "High",
+      TRUE ~ NA_character_
+    ),
+    region = factor(region, levels = c("NW", "SW", "NE", "SE")),
+    elev_cat = factor(elev_cat, levels = c("Low", "High"))
+  )
+
+summary(met_avg[, key_variables])
+table(met_avg$region, useNA = "ifany")
+table(met_avg$elev_cat, useNA = "ifany")
 ```
 
-### 3. Use `geom_violin` to examine the relative humidity and dew point by region
+After cleaning and aggregation, the analysis contains `r format(nrow(met_avg), big.mark = ",")` weather stations.
 
-You saw how to use `geom_boxplot` in class. Try using `geom_violin` instead (take a look at the help).
-(hint: you will need to set the `x` aesthetic to 1)
+## 3. Relative humidity and dew point by region
 
-- Use facets
-- Make sure to deal with `NA`s
-- Describe what you observe in the graph
+```{r}
+#| label: prepare-violin
+#| include: false
 
-```{r, eval = EVAL, echo = ECHO}
+violin_data <- met_avg |>
+  select(region, rh, dew.point) |>
+  pivot_longer(
+    cols = c(rh, dew.point),
+    names_to = "variable",
+    values_to = "value"
+  ) |>
+  drop_na(region, value) |>
+  mutate(
+    variable = recode(
+      variable,
+      rh = "Relative humidity (%)",
+      dew.point = "Dew point (°C)"
+    )
+  )
+
+regional_means <- met_avg |>
+  group_by(region) |>
+  summarise(
+    mean_rh = mean(rh, na.rm = TRUE),
+    mean_dew = mean(dew.point, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  drop_na(region)
+
+highest_rh_region <- regional_means$region[which.max(regional_means$mean_rh)]
+lowest_rh_region <- regional_means$region[which.min(regional_means$mean_rh)]
+highest_dew_region <- regional_means$region[which.max(regional_means$mean_dew)]
+lowest_dew_region <- regional_means$region[which.min(regional_means$mean_dew)]
+```
+
+```{r}
+#| label: fig-violin
+#| fig-cap: "Distributions of weekly average relative humidity and dew point by US region."
+#| fig-width: 10
+#| fig-height: 6
+
+ggplot(violin_data, aes(x = factor(1), y = value, fill = region)) +
+  geom_violin(trim = FALSE, alpha = 0.8, color = "white") +
+  facet_grid(variable ~ region, scales = "free_y") +
+  scale_fill_manual(values = region_colors, guide = "none") +
+  labs(
+    title = "Relative Humidity and Dew Point by Region",
+    x = NULL,
+    y = "Weekly station average"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+```
+
+The violin widths show where station averages are most concentrated, while their vertical extent shows the range. Average relative humidity is highest in the **`r highest_rh_region`** and lowest in the **`r lowest_rh_region`**. Average dew point is highest in the **`r highest_dew_region`** and lowest in the **`r lowest_dew_region`**. Differences in violin width and length also indicate that the variables do not have identical variability across the four regions.
+
+## 4. Association between dew point and relative humidity
+
+```{r}
+#| label: prepare-scatter-summary
+#| include: false
+
+scatter_data <- met_avg |>
+  drop_na(dew.point, rh, region)
+
+association_summary <- scatter_data |>
+  group_by(region) |>
+  summarise(
+    correlation = cor(dew.point, rh),
+    slope = coef(lm(rh ~ dew.point))[2],
+    .groups = "drop"
+  )
+
+positive_regions <- association_summary |>
+  filter(slope > 0) |>
+  pull(region) |>
+  as.character()
+
+negative_regions <- association_summary |>
+  filter(slope < 0) |>
+  pull(region) |>
+  as.character()
+
+direction_text <- case_when(
+  length(positive_regions) == nrow(association_summary) ~
+    "positive in every region",
+  length(negative_regions) == nrow(association_summary) ~
+    "negative in every region",
+  TRUE ~ "different in direction across regions"
+)
+
+strongest_region <- association_summary$region[
+  which.max(abs(association_summary$correlation))
+]
+```
+
+```{r}
+#| label: fig-scatter
+#| fig-cap: "Association between weekly average dew point and relative humidity, with a separate fitted linear regression line for each region."
+#| fig-width: 9
+#| fig-height: 6
+
+ggplot(
+  scatter_data,
+  aes(x = dew.point, y = rh, color = region)
+) +
+  geom_point(alpha = 0.45, size = 1.7) +
+  stat_smooth(method = "lm", se = FALSE, linewidth = 1.1) +
+  scale_color_manual(values = region_colors) +
+  labs(
+    title = "Dew Point and Relative Humidity by Region",
+    x = "Weekly average dew point (°C)",
+    y = "Weekly average relative humidity (%)",
+    color = "Region"
+  )
+```
+
+The estimated relationship between dew point and relative humidity is **`r direction_text`**. Based on the absolute within-region correlation, the strongest linear association occurs in the **`r strongest_region`**. The vertical separation among the fitted lines indicates that stations with the same dew point may nevertheless have different expected relative humidity depending on region.
+
+```{r}
+#| label: association-table
+
+association_summary |>
+  mutate(
+    correlation = round(correlation, 3),
+    slope = round(slope, 3)
+  ) |>
+  knitr::kable(
+    col.names = c("Region", "Correlation", "Regression slope"),
+    caption = "Within-region dew point and relative humidity associations"
+  )
+```
+
+## 5. Weather stations by elevation category and region
+
+```{r}
+#| label: prepare-bar-summary
+#| include: false
+
+bar_data <- met_avg |>
+  drop_na(elev_cat, region)
+
+station_counts <- bar_data |>
+  count(region, elev_cat, name = "stations")
+
+largest_group <- station_counts |>
+  slice_max(stations, n = 1, with_ties = FALSE)
+
+smallest_group <- station_counts |>
+  slice_min(stations, n = 1, with_ties = FALSE)
+```
+
+```{r}
+#| label: fig-bar
+#| fig-cap: "Weather-station counts by elevation category and region."
+#| fig-width: 8
+#| fig-height: 5
+
+ggplot(bar_data, aes(x = elev_cat, fill = region)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(
+    title = "Weather Stations by Elevation and Region",
+    x = "Elevation category",
+    y = "Number of weather stations",
+    fill = "Region"
+  )
+```
+
+The largest combination is **`r largest_group$region`–`r largest_group$elev_cat`**, with `r largest_group$stations` stations. The smallest observed combination is **`r smallest_group$region`–`r smallest_group$elev_cat`**, with `r smallest_group$stations` stations. The plot therefore shows that the distribution of sampled stations across elevation categories is not the same in all four regions.
+
+## 6. Mean dew point and wind speed by region
+
+```{r}
+#| label: prepare-summary-plot
+#| include: false
+
+weather_long <- met_avg |>
+  select(region, dew.point, wind.sp) |>
+  pivot_longer(
+    cols = c(dew.point, wind.sp),
+    names_to = "variable",
+    values_to = "value"
+  ) |>
+  drop_na(region, value) |>
+  mutate(
+    variable = recode(
+      variable,
+      dew.point = "Dew point (°C)",
+      wind.sp = "Wind speed"
+    )
+  )
+
+weather_region_summary <- met_avg |>
+  group_by(region) |>
+  summarise(
+    dew_point = mean(dew.point, na.rm = TRUE),
+    wind_speed = mean(wind.sp, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  drop_na(region)
+
+dew_high <- weather_region_summary$region[
+  which.max(weather_region_summary$dew_point)
+]
+dew_low <- weather_region_summary$region[
+  which.min(weather_region_summary$dew_point)
+]
+wind_high <- weather_region_summary$region[
+  which.max(weather_region_summary$wind_speed)
+]
+wind_low <- weather_region_summary$region[
+  which.min(weather_region_summary$wind_speed)
+]
+```
+
+```{r}
+#| label: fig-summary
+#| fig-cap: "Regional means with error bars extending one standard deviation above and below each mean."
+#| fig-width: 9
+#| fig-height: 5
+
+ggplot(weather_long, aes(x = region, y = value, color = region)) +
+  stat_summary(
+    fun.data = "mean_sdl",
+    fun.args = list(mult = 1),
+    geom = "point",
+    size = 3
+  ) +
+  stat_summary(
+    fun.data = "mean_sdl",
+    fun.args = list(mult = 1),
+    geom = "errorbar",
+    width = 0.18,
+    linewidth = 0.8
+  ) +
+  facet_wrap(~ variable, scales = "free_y") +
+  scale_color_manual(values = region_colors, guide = "none") +
+  labs(
+    title = "Mean Dew Point and Wind Speed by Region",
+    subtitle = "Points are means; error bars show ±1 standard deviation",
+    x = "Region",
+    y = "Weekly station average"
+  )
+```
+
+**Dew point is** highest on average in the **`r dew_high`** and lowest in the **`r dew_low`**.
+
+**Wind speed is** highest on average in the **`r wind_high`** and lowest in the **`r wind_low`**. Longer error bars represent greater between-station variability within a region. Overlapping standard-deviation intervals indicate that there is considerable within-region variation, so the graph alone should not be treated as a formal significance test.
+
+## 7. Spatial trend in relative humidity
+
+```{r}
+#| label: prepare-map
+
+map_data <- met_avg |>
+  drop_na(lat, lon, rh) |>
+  mutate(
+    rh_rank = rank(-rh, ties.method = "first"),
+    top10 = rh_rank <= 10
+  )
+
+rh_palette <- colorNumeric(
+  palette = c("#FFF7BC", "#7FCDBB", "#2C7FB8", "#253494"),
+  domain = map_data$rh
+)
+
+spatial_summary <- map_data |>
+  mutate(
+    east_west = if_else(lon > -98, "East", "West"),
+    north_south = if_else(lat >= 39.71, "North", "South")
+  ) |>
+  summarise(
+    east = mean(rh[east_west == "East"], na.rm = TRUE),
+    west = mean(rh[east_west == "West"], na.rm = TRUE),
+    north = mean(rh[north_south == "North"], na.rm = TRUE),
+    south = mean(rh[north_south == "South"], na.rm = TRUE)
+  )
+
+east_west_text <- if (
+  spatial_summary$east > spatial_summary$west
+) "East" else "West"
+
+north_south_text <- if (
+  spatial_summary$north > spatial_summary$south
+) "North" else "South"
+```
+
+```{r}
+#| label: fig-map
+
+top10_data <- map_data |>
+  filter(top10)
+
+leaflet(data = map_data) |>
+  addProviderTiles("CartoDB.Positron") |>
+
+  addCircleMarkers(
+    lng = ~lon,
+    lat = ~lat,
+    radius = 4,
+    stroke = FALSE,
+    fillColor = ~rh_palette(rh),
+    fillOpacity = 0.75,
+    label = ~paste0(
+      "Station: ", USAFID,
+      " | RH: ", round(rh, 1), "%"
+    )
+  ) |>
+
+  addCircleMarkers(
+    data = top10_data,
+    lng = ~lon,
+    lat = ~lat,
+    radius = 8,
+    color = "#D7301F",
+    weight = 3,
+    fill = FALSE,
+    label = ~paste0(
+      "Top-10 station | RH: ",
+      round(rh, 1),
+      "%"
+    )
+  ) |>
+
+  addLegend(
+    position = "bottomright",
+    pal = rh_palette,
+    values = map_data$rh,
+    title = "Relative humidity (%)",
+    opacity = 1
+  )
+```
+
+The map shows geographic clustering rather than a uniform distribution of relative humidity. As a broad numerical comparison, average station humidity is higher in the **`r east_west_text`** than in the other east–west half and higher in the **`r north_south_text`** than in the other north–south half. The red outlined circles identify the ten stations with the highest weekly average relative humidity. These broad summaries should be interpreted alongside the local patterns visible on the interactive map.
+
+## 8. Plot using a ggplot extension
+
+For the extension plot, `ggforce::geom_sina()` displays individual stations while spreading overlapping points according to their local density. It therefore combines some of the strengths of a violin plot and a jittered point plot.
+
+```{r}
+#| label: fig-extension
+#| fig-cap: "Distribution of relative humidity by region and elevation category using ggforce::geom_sina."
+#| fig-width: 9
+#| fig-height: 6
+
 met_avg |>
-  filter(!is.na(rh)) |>
-ggplot()+
-  geom_violin(mapping = aes(y=rh, x=1)) +
-  facet_wrap(~region, nrow=2)
-
-met_avg |>
-  filter(!is.na(dew.point)) |>
-ggplot()+
-  geom_violin(mapping = aes(y=dew.point, x=1, fill=region)) +
-  facet_wrap(~region, nrow=2)
+  drop_na(region, elev_cat, rh) |>
+  ggplot(aes(x = region, y = rh, color = region)) +
+  ggforce::geom_sina(alpha = 0.45, size = 1.6) +
+  geom_boxplot(
+    width = 0.18,
+    outlier.shape = NA,
+    color = "black",
+    fill = "white",
+    alpha = 0.75
+  ) +
+  facet_wrap(~ elev_cat) +
+  scale_color_manual(values = region_colors, guide = "none") +
+  labs(
+    title = "Relative Humidity by Region and Elevation",
+    subtitle = "Sina plots show the density and individual station values",
+    x = "Region",
+    y = "Weekly average relative humidity (%)"
+  )
 ```
 
+This extension plot makes it possible to compare both the center and the full distribution of station-level relative humidity. Wider sections contain a greater concentration of stations. Comparing the low- and high-elevation facets shows whether the regional humidity pattern remains similar across elevation categories.
 
-### 4. Use `geom_point` with `stat_smooth` to examine the association between dew point and relative humidity by region
+## Conclusion
 
-- Color points by region
-- Make sure to deal with `NA`s
-- Fit a linear regression line by region
-- Describe what you observe in the graph
+This analysis cleaned and summarized hourly meteorological records into weekly station averages. The visualizations compared relative humidity, dew point, wind speed, elevation, geographic region, and spatial location. Together, the figures demonstrate that weather conditions and the distribution of monitoring stations vary geographically across the continental United States.
 
-```{r, eval = EVAL, echo = ECHO}
-met_avg |>
-filter(!is.na(rh) & !is.na(dew.point)) |>
-  ggplot(mapping = aes(x=dew.point, y=rh, color=region))+
-  geom_point() + 
-  stat_smooth(method=lm)
+## Reproducibility information
+
+```{r}
+#| label: session-info
+
+sessionInfo()
 ```
-
-
-### 5. Use `geom_bar` to create barplots of the weather stations by elevation category colored by region
-
-- Bars by elevation category using `position="dodge"`
-- Change colors from the default. Color by region using `scale_fill_brewer` see [this](http://rstudio-pubs-static.s3.amazonaws.com/5312_98fc1aba2d5740dd849a5ab797cc2c8d.html)
-- Create nice labels on the axes and add a title
-- Describe what you observe in the graph
-- Make sure to deal with `NA` values
-
-```{r warning=FALSE, message=FALSE, eval = EVAL, echo = ECHO}
-met_avg |>
-filter(!is.na(region)) |>
-  ggplot()+
-  geom_bar(mapping=aes(x=elev_cat,fill=region), position = "dodge")+
-  scale_fill_brewer(palette = "PuOr")+
-  labs(title="Number of weather stations by elevation category and region", x="Elevation Category", y= "Count")+
-  theme_bw()
-
-```
-
-### 6. Use `stat_summary` to examine mean dew point and wind speed by region with standard deviation error bars
-
-- Make sure to remove `NA`s
-- Use `fun.data="mean_sdl"` in `stat_summary`
-- Add another layer of `stats_summary` but change the geom to `"errorbar"` (see the help).
-- Describe the graph and what you observe
-
-```{r, eval = EVAL, echo = ECHO}
-met_avg |>
-filter(!is.na(dew.point)) |>
-  ggplot(mapping=aes(x=region, y=dew.point)) +
-  stat_summary(fun.data="mean_sdl", geom="errorbar") +
-  stat_summary(fun.data="mean_sdl")
-
-met_avg |>
-filter(!is.na(wind.sp)) |>
-  ggplot(mapping=aes(x=region, y=wind.sp)) +
-  stat_summary(fun.data="mean_sdl", geom="errorbar") +
-  stat_summary(fun.data="mean_sdl")
-```
-
-- Dew point is...
-- Wind speed is...
-
-### 7. Make a map showing the spatial trend in relative humidity in the US
-
-- Make sure to remove `NA`s
-- Use `leaflet()` or `ggplot2`
-- Make a color palette with custom colors
-- Use `addMarkers` or `geom_point` to include the top 10 places in relative humidity (hint: this will be useful `rank(-rh) <= 10`)
-- Add a legend
-
-```{r, eval = EVAL, echo = ECHO}
-met_avg2 <- met_avg[!is.na(met_avg$rh), ]
-
-# Top ten
-top10 <- met_avg2[rank(-met_avg2$rh) <= 10, ]
-
-rh_pal = colorNumeric(c('blue','purple','red'), domain=met_avg2$rh)
-leaflet(met_avg2) |>
-  addProviderTiles('OpenStreetMap') |>
-  addCircles(lat=~lat, lng=~lon, color=~rh_pal(rh), label=~paste0(round(rh,2), ' rh'), opacity=1,fillOpacity=1, radius=500) |>
-  addMarkers(lat=~lat, lng=~lon, label=~paste0(round(rh,2), ' rh'), data = top10) |>
-  addLegend('bottomleft',pal=rh_pal, values=met_avg2$rh, title="Relative Humidity", opacity=1)
-
-```
-
-- Describe the trend in RH across the US
-
-### 8. Use a ggplot extension
-
-- Pick an extension (except `cowplot`) from [here](https://exts.ggplot2.tidyverse.org/gallery/) and make a plot of your choice using the met data (or met_avg)
-- You might want to try examples that come with the extension first (e.g. `ggtech`, `gganimate`, `ggforce`)
-
