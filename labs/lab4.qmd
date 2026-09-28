@@ -1,6 +1,6 @@
 ---
 title: "Lab 4 — Data Visualization"
-author: "Your Name"
+author: "Arnav Bhatia"
 date: today
 format:
   html:
