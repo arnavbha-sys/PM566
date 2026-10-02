@@ -1,78 +1,643 @@
 ---
 title: "Assignment 1 - Exploratory Data Analysis"
+author: "Arnav Bhatia"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    code-fold: false
 link-citations: true
+execute:
+  warning: false
+  message: false
 ---
 
-# Due Date
+# Introduction
 
-This assignment is due by 11:59pm Pacific Time on Friday, September 25th, 2026.
+This exploratory data analysis examines whether daily concentrations of fine
+particulate matter (PM$_{2.5}$) decreased in California between 2002 and 2022.
+The data were downloaded from the U.S. Environmental Protection Agency's
+[EPA Air Quality Data website](https://www.epa.gov/outdoor-air-quality-data/download-daily-data).
+The analysis examines the data at the state, county, and Los Angeles County
+monitoring-site levels.
 
-# Learning Goals
+```{r}
+#| label: setup
 
-- Download, read, and get familiar with an external dataset. 
-- Step through the EDA "checklist" presented in class
-- Practice making exploratory plots
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(maps)
+library(knitr)
 
+theme_set(theme_minimal())
 
-# Assignment Description
+options(
+  dplyr.summarise.inform = FALSE,
+  scipen = 999
+)
+```
 
-We will work with air pollution data from the U.S. Environmental Protection
-Agency (EPA). The EPA has a national monitoring network of air pollution sites
-that measure particulate matter (PM) concentrations. A primer on particulate
-matter air pollution can be found
-[here](https://www.epa.gov/pm-pollution/particulate-matter-pm-basics).
+# 1. Initial Data Inspection
 
-The primary question you will answer is whether daily concentrations of
-PM$_{2.5}$ (particulate matter air pollution with aerodynamic diameter less than
-2.5 $\mu$m) decreased in California over the 20 years spanning from 2002 to
-2022.
+## Read the datasets
 
-Your assignment should be completed in Quarto and all code should be included.
+The CSV files are stored outside the GitHub repository so the raw EPA data will
+not be uploaded to GitHub. On my computer, the files are stored in the Downloads
+folder.
 
-# Steps
+```{r}
+# Change this line if the CSV files are stored somewhere else.
+data_dir <- "~/Downloads"
 
-1. (30 points) Given the formulated question from the assignment description, you will now
-conduct EDA Checklist items 1-5. First, download 2002 and 2022 data for all
-sites in California from the [EPA Air Quality Data
-website](https://www.epa.gov/outdoor-air-quality-data/download-daily-data), then
-read the data into R. For each of the two datasets, check the dimensions,
-headers, footers, variable names and variable types. Check the distribution of
-the key variable we are analyzing (PM$_{2.5}$). Write up a summary of all of
-your findings.
+pm2002_raw <- read_csv(
+  file.path(data_dir, "ad_viz_plotval_data (1).csv"),
+  show_col_types = FALSE
+)
 
-2. (10 points) Combine the two years of data into one data frame. Use the `Date` variable to
-create a new column for year, which will serve as an identifier. Change the
-names of the key variables so that they are easier to refer to in your code.
+pm2022_raw <- read_csv(
+  file.path(data_dir, "ad_viz_plotval_data.csv"),
+  show_col_types = FALSE
+)
+```
 
-3. (20 points) Create a basic map (or maps) in either `leaflet` or `ggplot`
-showing the locations of the monitoring sites, using different colors for each
-year. Summarize the spatial distribution of the sites. Does this distribution
-change from 2002 to 2022?
+## Dimensions
 
-4. (10 points) Check for any data issues such as missing or implausible values of PM$_{2.5}$
-in the combined dataset. Calculate the proportion of missing/implausible values
-for each year and report any temporal patterns you see in these observations.
+```{r}
+data_dimensions <- tibble(
+  year = c(2002, 2022),
+  rows = c(nrow(pm2002_raw), nrow(pm2022_raw)),
+  columns = c(ncol(pm2002_raw), ncol(pm2022_raw))
+)
 
-5. (30 points) Explore the main question of interest at three different levels
-of spatial resolution. Create data visualizations (e.g. boxplots, histograms,
-line plots, violin plots) **and** summary statistics that best suit each level
-of the analysis. Be sure to write up explanations of what you observe at each
-level.
+kable(
+  data_dimensions,
+  caption = "Dimensions of the two EPA datasets"
+)
+```
 
- - Level 1: State. Examine the primary question for the entire state.
- - Level 2: County. Examine the primary question for every county in California.
- - Level 3: City. Restrict the data to sites in Los Angeles county and examine the primary question for every site.
+The 2002 dataset contains `r format(nrow(pm2002_raw), big.mark = ",")`
+observations and `r ncol(pm2002_raw)` variables. The 2022 dataset contains
+`r format(nrow(pm2022_raw), big.mark = ",")` observations and
+`r ncol(pm2022_raw)` variables. Therefore, substantially more monitoring
+observations were available in 2022.
 
-Reminder: after you upload your final rendered document to GitHub, you should
-download it to make sure that it looks right! If you haven't included
-`embed-resources: true` in the YAML header, none of your figures will show up!
+## Headers and footers
 
-Another reminder: GitHub is not (generally) intended for sharing data, so if you
-upload the dataset to your GitHub repo, you will lose 5 points. You can avoid
-this problem by storing the data somewhere else on your local machine (outside
-of your repo), or by adding the data file to your `.gitignore` file.
+```{r}
+#| results: hold
 
----
+head(pm2002_raw)
+tail(pm2002_raw)
 
-This homework has been adapted from the [case study](https://bookdown.org/rdpeng/exdata/data-analysis-case-study-changes-in-fine-particle-air-pollution-in-the-u-s-.html) in Roger Peng's [Exploratory Data Analysis with R](https://bookdown.org/rdpeng/exdata/)
+head(pm2022_raw)
+tail(pm2022_raw)
+```
 
+The headers and footers confirm that the 2002 file begins and ends with dates
+from 2002, while the 2022 file begins and ends with dates from 2022. Both files
+contain observations from California and have the same basic structure.
+
+## Variable names
+
+```{r}
+names(pm2002_raw)
+names(pm2022_raw)
+```
+
+Both datasets have the same variable names. Important variables include
+`Date`, `Site ID`, `Daily Mean PM2.5 Concentration`, `Local Site Name`,
+`County`, `Site Latitude`, and `Site Longitude`.
+
+## Variable types
+
+```{r}
+glimpse(pm2002_raw)
+glimpse(pm2022_raw)
+```
+
+Most identification and location variables were read as character variables,
+while PM$_{2.5}$, latitude, and longitude were read as numeric variables.
+The `Date` variable was initially read as a character variable and will be
+converted to a proper date in the next section.
+
+## Distribution of PM2.5
+
+```{r}
+pm_distribution_raw <- bind_rows(
+  pm2002_raw |> mutate(dataset_year = 2002),
+  pm2022_raw |> mutate(dataset_year = 2022)
+) |>
+  transmute(
+    year = factor(dataset_year),
+    pm25 = `Daily Mean PM2.5 Concentration`
+  )
+
+pm_distribution_raw |>
+  group_by(year) |>
+  summarise(
+    n = n(),
+    missing = sum(is.na(pm25)),
+    minimum = min(pm25, na.rm = TRUE),
+    first_quartile = quantile(pm25, 0.25, na.rm = TRUE),
+    median = median(pm25, na.rm = TRUE),
+    mean = mean(pm25, na.rm = TRUE),
+    third_quartile = quantile(pm25, 0.75, na.rm = TRUE),
+    maximum = max(pm25, na.rm = TRUE)
+  ) |>
+  kable(
+    digits = 2,
+    caption = "Initial summary of daily PM2.5 concentrations"
+  )
+```
+
+```{r}
+ggplot(
+  pm_distribution_raw,
+  aes(x = pm25, fill = year)
+) +
+  geom_histogram(
+    bins = 50,
+    color = "white",
+    alpha = 0.75
+  ) +
+  facet_wrap(
+    vars(year),
+    scales = "free_y"
+  ) +
+  scale_fill_manual(
+    values = c("2002" = "#2C7BB6", "2022" = "#D7191C")
+  ) +
+  labs(
+    title = "Distribution of Daily PM2.5 Concentrations",
+    subtitle = "California EPA monitoring observations, 2002 and 2022",
+    x = expression("Daily mean PM"[2.5] * " concentration (" * mu * "g/m"^3 * ")"),
+    y = "Number of observations",
+    fill = "Year"
+  ) +
+  guides(fill = "none")
+```
+
+The distributions are right-skewed in both years, meaning that most daily
+concentrations are relatively low but a smaller number of days have very high
+concentrations. The 2022 data include negative values, which are not physically
+plausible concentrations and will be addressed during the data-quality check.
+The high positive observations may reflect genuine extreme pollution episodes,
+including wildfire smoke, so they are retained unless there is additional
+evidence that they are errors.
+
+# 2. Combine and Clean the Data
+
+The two datasets were combined using `bind_rows()`. The variable names were
+standardized with `clean_names()`, and the key variables were given shorter
+names. The year identifier was derived from the date rather than from the
+dataset name.
+
+```{r}
+pm_combined <- bind_rows(pm2002_raw, pm2022_raw) |>
+  clean_names() |>
+  transmute(
+    date = mdy(date),
+    year = year(date),
+    pm25 = daily_mean_pm2_5_concentration,
+    site_id = as.character(site_id),
+    poc = as.character(poc),
+    site_name = local_site_name,
+    county,
+    latitude = site_latitude,
+    longitude = site_longitude,
+    parameter_code = as.character(aqs_parameter_code),
+    parameter_description = aqs_parameter_description,
+    method_code = as.character(method_code),
+    method_description
+  )
+```
+
+```{r}
+glimpse(pm_combined)
+```
+
+```{r}
+pm_combined |>
+  count(year, name = "number_of_rows") |>
+  kable(
+    caption = "Number of observations after combining the datasets"
+  )
+```
+
+The combined dataset contains observations from both years. The renamed
+variables make the subsequent code shorter and easier to interpret.
+
+Some sites have more than one measurement for the same date because the EPA
+files include different parameter codes, instruments, or pollutant occurrence
+codes. For the state, county, and site comparisons, these repeated measurements
+are averaged to create one PM$_{2.5}$ value per site per day. This prevents
+site-days with several instruments from receiving more weight than site-days
+with only one measurement.
+
+# 3. Spatial Distribution of Monitoring Sites
+
+First, one record was retained for every unique monitoring site in each year.
+
+```{r}
+monitoring_sites <- pm_combined |>
+  distinct(
+    year,
+    site_id,
+    site_name,
+    county,
+    latitude,
+    longitude
+  )
+```
+
+```{r}
+monitoring_sites |>
+  count(year, name = "number_of_sites") |>
+  kable(
+    caption = "Number of California monitoring sites by year"
+  )
+```
+
+```{r}
+california_map <- map_data("state") |>
+  filter(region == "california")
+
+ggplot() +
+  geom_polygon(
+    data = california_map,
+    aes(x = long, y = lat, group = group),
+    fill = "gray95",
+    color = "gray40",
+    linewidth = 0.4
+  ) +
+  geom_point(
+    data = monitoring_sites,
+    aes(
+      x = longitude,
+      y = latitude,
+      color = factor(year)
+    ),
+    alpha = 0.70,
+    size = 1.8
+  ) +
+  coord_quickmap() +
+  scale_color_manual(
+    values = c("2002" = "#2C7BB6", "2022" = "#D7191C")
+  ) +
+  labs(
+    title = "California PM2.5 Monitoring Sites",
+    subtitle = "Site locations in 2002 and 2022",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Year"
+  )
+```
+
+There were `r n_distinct(filter(monitoring_sites, year == 2002)$site_id)`
+monitoring sites in 2002 and
+`r n_distinct(filter(monitoring_sites, year == 2022)$site_id)` sites in 2022.
+In both years, monitoring sites were concentrated around major population
+centers, including the Los Angeles region, the San Francisco Bay Area, the
+Central Valley, and the San Diego region. The 2022 network included more sites
+and provided broader coverage than the 2002 network. Nevertheless, the sites
+were not distributed uniformly across California; rural and sparsely populated
+areas generally had fewer monitors.
+
+# 4. Missing and Implausible PM2.5 Values
+
+A negative PM$_{2.5}$ concentration was classified as implausible because a
+physical concentration cannot be below zero. Zero was retained as a possible
+very low measurement. High positive values were also retained because major
+air-pollution and wildfire events can produce extremely high concentrations.
+
+```{r}
+data_quality <- pm_combined |>
+  mutate(
+    missing_pm25 = is.na(pm25),
+    implausible_pm25 = !is.na(pm25) & pm25 < 0,
+    missing_or_implausible = missing_pm25 | implausible_pm25
+  ) |>
+  group_by(year) |>
+  summarise(
+    total_observations = n(),
+    missing_n = sum(missing_pm25),
+    missing_proportion = mean(missing_pm25),
+    implausible_n = sum(implausible_pm25),
+    implausible_proportion = mean(implausible_pm25),
+    affected_n = sum(missing_or_implausible),
+    affected_proportion = mean(missing_or_implausible)
+  )
+
+data_quality |>
+  mutate(
+    missing_proportion = scales::percent(
+      missing_proportion,
+      accuracy = 0.01
+    ),
+    implausible_proportion = scales::percent(
+      implausible_proportion,
+      accuracy = 0.01
+    ),
+    affected_proportion = scales::percent(
+      affected_proportion,
+      accuracy = 0.01
+    )
+  ) |>
+  kable(
+    caption = "Missing and implausible PM2.5 observations by year"
+  )
+```
+
+There were no missing PM$_{2.5}$ values in either dataset. There were no
+negative values in 2002, but the 2022 dataset contained
+`r sum(pm_combined$year == 2022 & pm_combined$pm25 < 0, na.rm = TRUE)`
+negative values. Thus, the identified implausible-value problem was limited to
+2022, although it affected only a small proportion of that year's observations.
+
+The implausible values were changed to missing before conducting the main
+comparisons.
+
+```{r}
+pm_clean <- pm_combined |>
+  mutate(
+    pm25_clean = if_else(pm25 < 0, NA_real_, pm25)
+  )
+```
+
+A site-day dataset was then created by averaging valid measurements recorded at
+the same site on the same date.
+
+```{r}
+site_day <- pm_clean |>
+  group_by(
+    year,
+    date,
+    site_id,
+    site_name,
+    county,
+    latitude,
+    longitude
+  ) |>
+  summarise(
+    pm25 = if (
+      all(is.na(pm25_clean))
+    ) {
+      NA_real_
+    } else {
+      mean(pm25_clean, na.rm = TRUE)
+    },
+    number_of_measurements = n(),
+    .groups = "drop"
+  )
+```
+
+# 5. PM2.5 at Three Spatial Levels
+
+## Level 1: State
+
+The statewide comparison uses one observation per monitoring site per day.
+
+```{r}
+state_summary <- site_day |>
+  group_by(year) |>
+  summarise(
+    site_days = n(),
+    valid_site_days = sum(!is.na(pm25)),
+    mean_pm25 = mean(pm25, na.rm = TRUE),
+    standard_deviation = sd(pm25, na.rm = TRUE),
+    minimum = min(pm25, na.rm = TRUE),
+    first_quartile = quantile(pm25, 0.25, na.rm = TRUE),
+    median_pm25 = median(pm25, na.rm = TRUE),
+    third_quartile = quantile(pm25, 0.75, na.rm = TRUE),
+    maximum = max(pm25, na.rm = TRUE)
+  )
+
+state_summary |>
+  kable(
+    digits = 2,
+    caption = "Statewide summary of daily PM2.5 concentrations"
+  )
+```
+
+```{r}
+ggplot(
+  site_day,
+  aes(
+    x = factor(year),
+    y = pm25,
+    fill = factor(year)
+  )
+) +
+  geom_violin(
+    trim = FALSE,
+    alpha = 0.65,
+    na.rm = TRUE
+  ) +
+  geom_boxplot(
+    width = 0.18,
+    outlier.shape = NA,
+    fill = "white",
+    na.rm = TRUE
+  ) +
+  coord_cartesian(ylim = c(0, 60)) +
+  scale_fill_manual(
+    values = c("2002" = "#2C7BB6", "2022" = "#D7191C")
+  ) +
+  labs(
+    title = "Statewide Distribution of Daily PM2.5",
+    subtitle = "The y-axis is limited to 60 µg/m³ so the central distributions are visible",
+    x = "Year",
+    y = expression("Daily mean PM"[2.5] * " (" * mu * "g/m"^3 * ")")
+  ) +
+  guides(fill = "none")
+```
+
+The statewide mean decreased from
+`r round(state_summary$mean_pm25[state_summary$year == 2002], 1)`
+µg/m³ in 2002 to
+`r round(state_summary$mean_pm25[state_summary$year == 2022], 1)`
+µg/m³ in 2022. The median decreased from
+`r round(state_summary$median_pm25[state_summary$year == 2002], 1)`
+µg/m³ to
+`r round(state_summary$median_pm25[state_summary$year == 2022], 1)`
+µg/m³. The lower mean and median in 2022 provide descriptive evidence that
+typical daily PM$_{2.5}$ concentrations decreased statewide. However, both
+years contain high-pollution observations, and the maximum alone should not be
+used to describe the typical exposure level.
+
+## Level 2: County
+
+County-level summary statistics were calculated separately for every county and
+year.
+
+```{r}
+county_summary <- site_day |>
+  group_by(county, year) |>
+  summarise(
+    number_of_sites = n_distinct(site_id),
+    site_days = n(),
+    valid_site_days = sum(!is.na(pm25)),
+    mean_pm25 = mean(pm25, na.rm = TRUE),
+    median_pm25 = median(pm25, na.rm = TRUE),
+    standard_deviation = sd(pm25, na.rm = TRUE),
+    first_quartile = quantile(pm25, 0.25, na.rm = TRUE),
+    third_quartile = quantile(pm25, 0.75, na.rm = TRUE)
+  ) |>
+  arrange(county, year)
+
+county_summary |>
+  kable(
+    digits = 2,
+    caption = "County-level PM2.5 summary statistics"
+  )
+```
+
+```{r}
+county_order <- county_summary |>
+  group_by(county) |>
+  summarise(overall_median = median(median_pm25, na.rm = TRUE)) |>
+  arrange(overall_median) |>
+  pull(county)
+
+county_summary <- county_summary |>
+  mutate(
+    county = factor(county, levels = county_order)
+  )
+
+ggplot(
+  county_summary,
+  aes(
+    x = median_pm25,
+    y = county,
+    color = factor(year),
+    group = county
+  )
+) +
+  geom_line(
+    color = "gray70",
+    linewidth = 0.6
+  ) +
+  geom_point(size = 2.2) +
+  scale_color_manual(
+    values = c("2002" = "#2C7BB6", "2022" = "#D7191C")
+  ) +
+  labs(
+    title = "Median Daily PM2.5 by California County",
+    subtitle = "Counties are ordered by their median concentration",
+    x = expression("Median daily PM"[2.5] * " (" * mu * "g/m"^3 * ")"),
+    y = NULL,
+    color = "Year"
+  ) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_text(size = 7)
+  )
+```
+
+The plot shows that the amount of change varied across counties. For counties
+with data in both years, a 2022 point located to the left of its 2002 point
+indicates a reduction in the median daily concentration. Many counties show
+lower median PM$_{2.5}$ concentrations in 2022, although the magnitude of the
+decrease is not identical across the state. Counties represented in only one
+year cannot be used for a direct temporal comparison.
+
+The number of counties represented also changed from
+`r n_distinct(filter(site_day, year == 2002)$county)` in 2002 to
+`r n_distinct(filter(site_day, year == 2022)$county)` in 2022. Therefore,
+county comparisons should be interpreted with awareness that the monitoring
+network changed over time.
+
+## Level 3: Monitoring Sites in Los Angeles County
+
+The final analysis was restricted to monitoring sites located in Los Angeles
+County.
+
+```{r}
+la_site_day <- site_day |>
+  filter(county == "Los Angeles") |>
+  mutate(
+    site_label = if_else(
+      is.na(site_name) | site_name == "",
+      site_id,
+      paste0(site_name, " (", site_id, ")")
+    )
+  )
+```
+
+```{r}
+la_site_summary <- la_site_day |>
+  group_by(site_id, site_name, year) |>
+  summarise(
+    site_days = n(),
+    valid_site_days = sum(!is.na(pm25)),
+    mean_pm25 = mean(pm25, na.rm = TRUE),
+    median_pm25 = median(pm25, na.rm = TRUE),
+    standard_deviation = sd(pm25, na.rm = TRUE),
+    minimum = min(pm25, na.rm = TRUE),
+    maximum = max(pm25, na.rm = TRUE)
+  ) |>
+  arrange(site_name, site_id, year)
+
+la_site_summary |>
+  kable(
+    digits = 2,
+    caption = "PM2.5 summary statistics for Los Angeles County monitoring sites"
+  )
+```
+
+```{r}
+ggplot(
+  la_site_day,
+  aes(
+    x = factor(year),
+    y = pm25,
+    fill = factor(year)
+  )
+) +
+  geom_boxplot(
+    outlier.alpha = 0.20,
+    na.rm = TRUE
+  ) +
+  facet_wrap(
+    vars(site_label),
+    scales = "free_y"
+  ) +
+  scale_fill_manual(
+    values = c("2002" = "#2C7BB6", "2022" = "#D7191C")
+  ) +
+  labs(
+    title = "Daily PM2.5 at Los Angeles County Monitoring Sites",
+    subtitle = "Each panel represents one EPA monitoring site",
+    x = "Year",
+    y = expression("Daily mean PM"[2.5] * " (" * mu * "g/m"^3 * ")"),
+    fill = "Year"
+  ) +
+  theme(
+    strip.text = element_text(size = 7),
+    legend.position = "bottom"
+  )
+```
+
+The Los Angeles County results demonstrate that pollution levels and temporal
+changes were not uniform across monitoring sites. Sites with observations in
+both years generally allow the clearest direct comparison. Several sites show
+lower central concentrations in 2022, but some sites were added, removed, or
+relocated between the two years. Consequently, changes in the set of active
+monitors must be considered when interpreting the Los Angeles County results.
+
+# Conclusion
+
+The exploratory results indicate that typical daily PM$_{2.5}$ concentrations
+in California were lower in 2022 than in 2002. This pattern is visible in the
+statewide mean and median and across many counties and Los Angeles County
+monitoring sites. However, the monitoring network expanded and changed during
+the 20-year period, so the two datasets do not represent exactly the same set
+of locations.
+
+The analysis also identified negative PM$_{2.5}$ observations in 2022. These
+values were classified as implausible and excluded from the concentration
+summaries. High positive values were retained because they may represent real
+extreme pollution events. Overall, the results support the conclusion that
+typical PM$_{2.5}$ concentrations decreased, while also showing meaningful
+spatial variation and occasional extreme pollution episodes.
