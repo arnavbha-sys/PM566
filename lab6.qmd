@@ -1,0 +1,349 @@
+---
+title: "Lab 6 - Text Mining"
+link-citations: true
+toc: false
+---
+
+```{r setup}
+knitr::opts_chunk$set(
+  eval = TRUE,
+  include = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+# Learning goals
+
+- Use `unnest_tokens()` to extract tokens and n-grams from text.
+- Use `dplyr` and `ggplot2` to analyze text data.
+
+# Setup packages
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(tidytext)
+library(tidyr)
+library(stringr)
+```
+
+# Read in Medical Transcriptions
+
+```{r}
+mt_samples <- read_csv(
+  "https://raw.githubusercontent.com/USCbiostats/data-science-data/master/00_mtsamples/mtsamples.csv"
+)
+
+mt_samples <- mt_samples |>
+  select(description, medical_specialty, transcription)
+
+head(mt_samples)
+```
+
+# Question 1: What specialties do we have?
+
+```{r}
+specialty_counts <- mt_samples |>
+  count(medical_specialty, sort = TRUE)
+
+specialty_counts
+```
+
+```{r}
+number_of_specialties <- mt_samples |>
+  summarise(number_of_specialties = n_distinct(medical_specialty))
+
+number_of_specialties
+```
+
+The dataset contains several different medical specialties. Some of the categories are related or potentially overlapping because patients may receive care from multiple specialties for similar medical problems. For example, surgical specialties may share terminology with related nonsurgical specialties. The specialties are not evenly distributed because some categories contain many more transcription records than others. Therefore, the most common specialties may have a greater influence on the overall word counts.
+
+# Question 2: Most frequent words
+
+First, the transcription column was tokenized into individual words. The number of appearances of each word was then calculated.
+
+```{r}
+word_counts <- mt_samples |>
+  filter(!is.na(transcription)) |>
+  unnest_tokens(word, transcription) |>
+  count(word, sort = TRUE)
+
+head(word_counts, 20)
+```
+
+```{r}
+top_20_words <- word_counts |>
+  slice_max(order_by = n, n = 20, with_ties = FALSE)
+
+ggplot(
+  top_20_words,
+  aes(x = reorder(word, n), y = n)
+) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Twenty Most Frequent Words in Medical Transcriptions",
+    x = "Word",
+    y = "Number of Appearances"
+  ) +
+  theme_minimal()
+```
+
+The most frequent words include many common English words rather than words that are specific to medicine. This makes sense because words such as articles, conjunctions, and prepositions appear repeatedly in normal sentences. Although the graph accurately shows the most frequently used words, it does not provide much insight into the medical content of the reports. Removing stop words should make the results more informative.
+
+# Question 3: Remove stop words
+
+Common stop words were removed using the `stop_words` dataset from `tidytext`. Tokens containing numbers were also removed.
+
+```{r}
+word_counts_no_stops <- mt_samples |>
+  filter(!is.na(transcription)) |>
+  unnest_tokens(word, transcription) |>
+  anti_join(stop_words, by = "word") |>
+  filter(!str_detect(word, "[0-9]")) |>
+  count(word, sort = TRUE)
+
+head(word_counts_no_stops, 20)
+```
+
+```{r}
+top_20_words_no_stops <- word_counts_no_stops |>
+  slice_max(order_by = n, n = 20, with_ties = FALSE)
+
+ggplot(
+  top_20_words_no_stops,
+  aes(x = reorder(word, n), y = n)
+) +
+  geom_col(fill = "darkgreen") +
+  coord_flip() +
+  labs(
+    title = "Twenty Most Frequent Words After Removing Stop Words",
+    x = "Word",
+    y = "Number of Appearances"
+  ) +
+  theme_minimal()
+```
+
+After removing stop words and numbers, the most frequent words are more closely related to medical care, anatomy, symptoms, examinations, and patients. These results provide a better idea of the subjects discussed in the transcriptions. However, individual words still lack context, so bigrams and trigrams may provide additional information.
+
+# Question 4: Bigrams and trigrams
+
+## Bigrams
+
+The transcriptions were tokenized into bigrams, which are sequences of two consecutive words.
+
+```{r}
+bigram_counts <- mt_samples |>
+  filter(!is.na(transcription)) |>
+  unnest_tokens(
+    bigram,
+    transcription,
+    token = "ngrams",
+    n = 2
+  ) |>
+  separate(
+    bigram,
+    into = c("word1", "word2"),
+    sep = " ",
+    remove = FALSE
+  ) |>
+  filter(
+    !word1 %in% stop_words$word,
+    !word2 %in% stop_words$word,
+    !str_detect(word1, "[0-9]"),
+    !str_detect(word2, "[0-9]")
+  ) |>
+  count(bigram, sort = TRUE)
+
+head(bigram_counts, 20)
+```
+
+```{r}
+top_20_bigrams <- bigram_counts |>
+  slice_max(order_by = n, n = 20, with_ties = FALSE)
+
+ggplot(
+  top_20_bigrams,
+  aes(x = reorder(bigram, n), y = n)
+) +
+  geom_col(fill = "purple") +
+  coord_flip() +
+  labs(
+    title = "Twenty Most Frequent Bigrams",
+    x = "Bigram",
+    y = "Number of Appearances"
+  ) +
+  theme_minimal()
+```
+
+## Trigrams
+
+The transcriptions were also tokenized into trigrams, which are sequences of three consecutive words.
+
+```{r}
+trigram_counts <- mt_samples |>
+  filter(!is.na(transcription)) |>
+  unnest_tokens(
+    trigram,
+    transcription,
+    token = "ngrams",
+    n = 3
+  ) |>
+  separate(
+    trigram,
+    into = c("word1", "word2", "word3"),
+    sep = " ",
+    remove = FALSE
+  ) |>
+  filter(
+    !word1 %in% stop_words$word,
+    !word2 %in% stop_words$word,
+    !word3 %in% stop_words$word,
+    !str_detect(word1, "[0-9]"),
+    !str_detect(word2, "[0-9]"),
+    !str_detect(word3, "[0-9]")
+  ) |>
+  count(trigram, sort = TRUE)
+
+head(trigram_counts, 20)
+```
+
+```{r}
+top_20_trigrams <- trigram_counts |>
+  slice_max(order_by = n, n = 20, with_ties = FALSE)
+
+ggplot(
+  top_20_trigrams,
+  aes(x = reorder(trigram, n), y = n)
+) +
+  geom_col(fill = "darkorange") +
+  coord_flip() +
+  labs(
+    title = "Twenty Most Frequent Trigrams",
+    x = "Trigram",
+    y = "Number of Appearances"
+  ) +
+  theme_minimal()
+```
+
+Bigrams provide more context than individual words because they show which words commonly appear together. Trigrams provide even more specific phrases, although they generally appear less frequently because exact three-word combinations are less likely to be repeated. The bigrams and trigrams reveal common medical phrases and documentation patterns that cannot be identified from individual word counts alone.
+
+# Question 5: Words appearing before and after “patient”
+
+For this analysis, I selected the word `patient`. The following code counts words that appear immediately before and immediately after it.
+
+```{r}
+all_bigrams <- mt_samples |>
+  filter(!is.na(transcription)) |>
+  unnest_tokens(
+    bigram,
+    transcription,
+    token = "ngrams",
+    n = 2
+  ) |>
+  separate(
+    bigram,
+    into = c("word1", "word2"),
+    sep = " "
+  )
+```
+
+## Words before “patient”
+
+```{r}
+words_before_patient <- all_bigrams |>
+  filter(
+    word2 == "patient",
+    !word1 %in% stop_words$word,
+    !str_detect(word1, "[0-9]")
+  ) |>
+  count(word1, sort = TRUE) |>
+  rename(
+    word_before_patient = word1,
+    count = n
+  )
+
+head(words_before_patient, 20)
+```
+
+## Words after “patient”
+
+```{r}
+words_after_patient <- all_bigrams |>
+  filter(
+    word1 == "patient",
+    !word2 %in% stop_words$word,
+    !str_detect(word2, "[0-9]")
+  ) |>
+  count(word2, sort = TRUE) |>
+  rename(
+    word_after_patient = word2,
+    count = n
+  )
+
+head(words_after_patient, 20)
+```
+
+The words surrounding `patient` provide information about how patients are described in the medical reports. Words appearing before `patient` may describe characteristics or introduce the patient, while words appearing after `patient` may describe symptoms, actions, medical history, or examination findings. This analysis supplies more context than counting the word `patient` alone.
+
+# Question 6: Most-used words in each specialty
+
+```{r}
+specialty_word_counts <- mt_samples |>
+  filter(
+    !is.na(transcription),
+    !is.na(medical_specialty)
+  ) |>
+  unnest_tokens(word, transcription) |>
+  anti_join(stop_words, by = "word") |>
+  filter(!str_detect(word, "[0-9]")) |>
+  count(medical_specialty, word, sort = TRUE)
+```
+
+```{r}
+top_5_words_by_specialty <- specialty_word_counts |>
+  group_by(medical_specialty) |>
+  slice_max(
+    order_by = n,
+    n = 5,
+    with_ties = FALSE
+  ) |>
+  arrange(medical_specialty, desc(n)) |>
+  ungroup()
+
+top_5_words_by_specialty
+```
+
+The most frequently used words vary across medical specialties. Many of the leading words are related to the body systems, procedures, symptoms, or treatments associated with each specialty. Some general medical words appear in multiple specialties because they are commonly used throughout clinical documentation. The differences demonstrate how word-frequency analysis can help identify the main subjects discussed within each specialty.
+
+# Question 7: Extra insight
+
+To determine which words are especially characteristic of particular specialties, the proportion of each specialty's words represented by each token was calculated.
+
+```{r}
+specialty_word_proportions <- specialty_word_counts |>
+  group_by(medical_specialty) |>
+  mutate(
+    total_words = sum(n),
+    proportion = n / total_words
+  ) |>
+  ungroup()
+```
+
+```{r}
+distinctive_words_by_specialty <- specialty_word_proportions |>
+  group_by(medical_specialty) |>
+  slice_max(
+    order_by = proportion,
+    n = 5,
+    with_ties = FALSE
+  ) |>
+  arrange(medical_specialty, desc(proportion)) |>
+  ungroup()
+
+distinctive_words_by_specialty
+```
+
+This analysis accounts for differences in the total number of words recorded for each specialty. The resulting words show which terms represent the largest share of the text within each specialty. This is more informative than using raw counts alone because specialties with more transcription records would otherwise tend to have larger counts for nearly every word.
