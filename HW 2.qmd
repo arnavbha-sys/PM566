@@ -1,0 +1,641 @@
+---
+title: "Assignment 2 - Data Wrangling, EDA, and Visualization"
+link-citations: true
+toc: false
+format:
+  html:
+    embed-resources: true
+    code-fold: false
+    df-print: paged
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+# Run this once in the Console if any package is missing:
+# install.packages(c("tidyverse", "nycflights13", "lubridate", "maps", "knitr"))
+
+library(tidyverse)
+library(nycflights13)
+library(lubridate)
+library(maps)
+library(knitr)
+
+theme_set(theme_minimal(base_size = 12))
+
+# Make local copies of the package data frames.
+flights <- nycflights13::flights
+airlines <- nycflights13::airlines
+airports <- nycflights13::airports
+planes <- nycflights13::planes
+weather <- nycflights13::weather
+```
+
+# Question 1
+
+The ten most popular destinations were found by counting flights for each destination airport. `n` is the number of flights to that destination.
+
+```{r}
+top_destinations <- flights |>
+  count(dest, sort = TRUE, name = "number_of_flights") |>
+  slice_head(n = 10)
+
+kable(top_destinations,
+      caption = "Ten most popular destinations from NYC in 2013")
+```
+
+The most popular destination was `r top_destinations$dest[1]`, with `r scales::comma(top_destinations$number_of_flights[1])` flights.
+
+# Question 2
+
+Because `dep_time` and `arr_time` use HHMM notation rather than decimal hours, I first converted each value to minutes after midnight. Midnight recorded as 2400 was treated as 0000. Missing actual departure or arrival times, which generally occur for cancelled flights, remain missing.
+
+```{r}
+time_period <- function(x) {
+  minutes <- ((x %/% 100) * 60 + x %% 100) %% (24 * 60)
+
+  case_when(
+    is.na(x) ~ NA_character_,
+    minutes <  6 * 60 ~ "early morning",
+    minutes < 12 * 60 ~ "morning",
+    minutes < 18 * 60 ~ "afternoon",
+    TRUE ~ "evening"
+  ) |>
+    factor(levels = c("early morning", "morning", "afternoon", "evening"))
+}
+
+flights_time <- flights |>
+  mutate(
+    dep_period = time_period(dep_time),
+    arr_period = time_period(arr_time)
+  )
+
+dep_plot <- ggplot(flights_time, aes(x = dep_period)) +
+  geom_bar(fill = "#2C7FB8") +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "Flights by actual departure period",
+    x = "Departure period",
+    y = "Number of flights"
+  )
+
+arr_plot <- ggplot(flights_time, aes(x = arr_period)) +
+  geom_bar(fill = "#D95F0E") +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "Flights by actual arrival period",
+    x = "Arrival period",
+    y = "Number of flights"
+  )
+
+dep_plot
+arr_plot
+```
+
+I classified a flight as a red-eye flight when it departed in the afternoon or evening and arrived in the early morning or morning. The denominator is flights with both an observed departure period and an observed arrival period; cancelled flights with missing actual times are therefore excluded.
+
+```{r}
+red_eye_summary <- flights_time |>
+  filter(!is.na(dep_period), !is.na(arr_period)) |>
+  summarise(
+    flights_with_observed_times = n(),
+    red_eye_flights = sum(
+      dep_period %in% c("afternoon", "evening") &
+        arr_period %in% c("early morning", "morning")
+    ),
+    red_eye_percentage = 100 * red_eye_flights / flights_with_observed_times
+  )
+
+kable(red_eye_summary, digits = 2,
+      caption = "Percentage of flights classified as red-eye flights")
+```
+
+Therefore, `r scales::comma(red_eye_summary$red_eye_flights)` flights were classified as red-eye flights, representing `r round(red_eye_summary$red_eye_percentage, 2)`% of flights with both actual times observed.
+
+# Question 3
+
+The `tailnum` variable identifies an individual aircraft. I counted the number of distinct airline carriers associated with each nonmissing tail number, retained aircraft used by more than one carrier, and then listed the relevant airlines.
+
+```{r}
+multi_airline_planes <- flights |>
+  filter(!is.na(tailnum)) |>
+  distinct(tailnum, carrier) |>
+  group_by(tailnum) |>
+  filter(n_distinct(carrier) > 1) |>
+  ungroup() |>
+  left_join(airlines, by = "carrier") |>
+  arrange(tailnum, carrier)
+
+multi_airline_count <- multi_airline_planes |>
+  distinct(tailnum) |>
+  nrow()
+
+multi_airline_display <- multi_airline_planes |>
+  group_by(tailnum) |>
+  summarise(
+    number_of_airlines = n_distinct(carrier),
+    carrier_codes = paste(sort(unique(carrier)), collapse = ", "),
+    airline_names = paste(sort(unique(name)), collapse = "; "),
+    .groups = "drop"
+  )
+
+kable(multi_airline_display,
+      caption = "Planes that flew for more than one airline")
+```
+
+Yes. There were `r multi_airline_count` planes that flew for multiple airlines. The table identifies each plane by tail number and gives both the carrier codes and full airline names.
+
+# Question 4
+
+The missing relationship is between `weather$origin` and `airports$faa`. In `weather`, `origin` contains the three NYC departure-airport codes (`EWR`, `JFK`, and `LGA`), while `faa` is the airport code used as the key in `airports`. The diagram should therefore include an arrow from `weather$origin` to `airports$faa`. Many hourly weather observations can correspond to one airport, so this is a many-to-one relationship from `weather` to `airports`.
+
+# Question 5
+
+I created the requested pasted key using year, month, day, hour, and origin. I report both the number of rows beyond the first occurrence (`duplicated()` count) and the number of distinct key values that are duplicated.
+
+```{r}
+weather_key_check <- weather |>
+  mutate(
+    pasted_key = paste(year, month, day, hour, origin, sep = "-")
+  )
+
+duplicated_row_count <- sum(duplicated(weather_key_check$pasted_key))
+
+duplicated_key_table <- weather_key_check |>
+  count(pasted_key, name = "rows_with_key") |>
+  filter(rows_with_key > 1)
+
+duplicated_value_count <- nrow(duplicated_key_table)
+
+weather_key_check |>
+  filter(pasted_key %in% duplicated_key_table$pasted_key) |>
+  select(pasted_key, origin, year, month, day, hour, time_hour) |>
+  arrange(pasted_key, time_hour) |>
+  kable(caption = "Weather observations sharing a pasted local-time key")
+```
+
+There are `r duplicated_row_count` duplicated rows beyond the first occurrence, representing `r duplicated_value_count` duplicated pasted-key values. These occur because daylight saving time ends in November: the local hour from 1:00 a.m. to 2:00 a.m. occurs twice, once before and once after the clock change. The pasted key loses the UTC-offset information, whereas `time_hour` retains it and distinguishes the two actual hours.
+
+Each flight was then joined to the weather at its departure airport during the hour in which it was scheduled to depart. A left join preserves every flight, including flights for which matching weather information is unavailable.
+
+```{r}
+flights_weather <- flights |>
+  left_join(
+    weather |>
+      select(
+        origin, time_hour, temp, dewp, humid, wind_dir, wind_speed,
+        wind_gust, precip, pressure, visib
+      ),
+    by = c("origin", "time_hour")
+  )
+
+join_check <- tibble(
+  flights_before_join = nrow(flights),
+  rows_after_join = nrow(flights_weather),
+  flights_without_matching_weather = sum(is.na(flights_weather$temp))
+)
+
+kable(join_check, caption = "Check of the flights-weather join")
+```
+
+# Question 6
+
+## EDA Step 2: Examine dimensions, observational units, and variables
+
+The merged data contain `r scales::comma(nrow(flights_weather))` rows and `r ncol(flights_weather)` columns. A row represents one scheduled flight leaving a NYC airport in 2013, supplemented with hourly weather at its origin. Because the primary question concerns weather and delays, the most relevant outcome variables are `dep_delay` and `arr_delay`; the primary exposure variables are temperature, dew point, humidity, wind, precipitation, pressure, and visibility.
+
+```{r}
+eda_variables <- flights_weather |>
+  select(
+    origin, year, month, day, hour, time_hour, carrier, flight, dest,
+    dep_delay, arr_delay, temp, dewp, humid, wind_dir, wind_speed,
+    wind_gust, precip, pressure, visib
+  )
+
+structure_table <- tibble(
+  variable = names(eda_variables),
+  class = map_chr(eda_variables, ~ paste(class(.x), collapse = ", ")),
+  unique_values = map_int(eda_variables, ~ n_distinct(.x, na.rm = TRUE))
+)
+
+kable(structure_table, caption = "Structure of variables relevant to the analysis")
+```
+
+`origin`, `carrier`, and `dest` are categorical variables even though they are stored as character strings. Calendar variables such as month, day, and hour are stored as integers but can function as grouping or adjustment variables. Delay and weather measurements are quantitative.
+
+## EDA Step 3: Assess missingness
+
+```{r}
+missingness <- eda_variables |>
+  summarise(across(everything(), ~ sum(is.na(.x)))) |>
+  pivot_longer(everything(), names_to = "variable", values_to = "missing_n") |>
+  mutate(missing_percent = 100 * missing_n / nrow(eda_variables)) |>
+  arrange(desc(missing_percent))
+
+kable(missingness, digits = 2,
+      caption = "Missing values in variables relevant to weather and delays")
+
+ggplot(missingness, aes(x = reorder(variable, missing_percent), y = missing_percent)) +
+  geom_col(fill = "#756BB1") +
+  coord_flip() +
+  labs(
+    title = "Missingness in the merged analytical data",
+    x = NULL,
+    y = "Missing observations (%)"
+  )
+```
+
+Missing departure and arrival delays largely represent cancelled flights for which actual flight times were not recorded. Weather variables also contain missing values, and `wind_gust` is especially incomplete. For summaries of observed delays, I use `na.rm = TRUE`. For multivariable modeling, I explicitly use complete cases for the included variables rather than imputing values without a defensible model.
+
+## EDA Step 4: Check ranges and potentially implausible values
+
+```{r}
+numeric_range <- eda_variables |>
+  select(where(is.numeric)) |>
+  pivot_longer(everything(), names_to = "variable", values_to = "value") |>
+  group_by(variable) |>
+  summarise(
+    minimum = min(value, na.rm = TRUE),
+    q1 = quantile(value, 0.25, na.rm = TRUE),
+    median = median(value, na.rm = TRUE),
+    mean = mean(value, na.rm = TRUE),
+    q3 = quantile(value, 0.75, na.rm = TRUE),
+    maximum = max(value, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+kable(numeric_range, digits = 2,
+      caption = "Ranges and summaries of numeric variables")
+
+validity_checks <- tibble(
+  check = c(
+    "Negative precipitation",
+    "Visibility below 0 miles",
+    "Humidity outside 0-100%",
+    "Wind direction outside 0-360 degrees",
+    "Non-finite wind speed"
+  ),
+  number_of_rows = c(
+    sum(flights_weather$precip < 0, na.rm = TRUE),
+    sum(flights_weather$visib < 0, na.rm = TRUE),
+    sum(flights_weather$humid < 0 | flights_weather$humid > 100, na.rm = TRUE),
+    sum(flights_weather$wind_dir < 0 | flights_weather$wind_dir > 360, na.rm = TRUE),
+    sum(!is.finite(flights_weather$wind_speed) & !is.na(flights_weather$wind_speed))
+  )
+)
+
+kable(validity_checks, caption = "Targeted data-validity checks")
+```
+
+The validity checks identify obvious impossible values. Very long positive delays are possible and important rather than automatically erroneous, so they are retained. Negative delays mean that a flight departed or arrived earlier than scheduled. Any non-finite wind-speed values would be excluded from analyses involving wind speed.
+
+## EDA Step 5: Examine distributions and relationships
+
+```{r}
+delay_long <- flights_weather |>
+  select(dep_delay, arr_delay) |>
+  pivot_longer(everything(), names_to = "delay_type", values_to = "delay")
+
+ggplot(delay_long, aes(x = delay, fill = delay_type)) +
+  geom_histogram(binwidth = 10, boundary = 0, show.legend = FALSE) +
+  facet_wrap(~ delay_type, scales = "free_y") +
+  coord_cartesian(xlim = c(-50, 300)) +
+  labs(
+    title = "Distributions of departure and arrival delays",
+    subtitle = "The x-axis is limited to show the main distribution; extreme delays remain in the analysis",
+    x = "Delay (minutes)",
+    y = "Number of flights"
+  )
+
+weather_long <- flights_weather |>
+  select(temp, dewp, humid, wind_speed, precip, pressure, visib) |>
+  pivot_longer(everything(), names_to = "weather_variable", values_to = "value")
+
+ggplot(weather_long, aes(x = value)) +
+  geom_histogram(bins = 40, fill = "#31A354", color = "white") +
+  facet_wrap(~ weather_variable, scales = "free") +
+  labs(
+    title = "Distributions of weather variables",
+    x = "Observed value",
+    y = "Number of flight-level observations"
+  )
+```
+
+Both delay outcomes are strongly right-skewed: most flights are near schedule, while a smaller number have very long delays. Weather variables use different units and also have different distribution shapes; precipitation is concentrated at zero. These features motivate grouped summaries, plots, and standardized coefficients rather than comparisons of raw slopes alone.
+
+# Question 7
+
+Here, “day” means a complete calendar date, so flights are grouped by year, month, and day rather than only by day of the month.
+
+```{r}
+daily_delays <- flights_weather |>
+  mutate(date = make_date(year, month, day)) |>
+  group_by(date) |>
+  summarise(
+    flights_with_delay_data = sum(!is.na(dep_delay)),
+    average_departure_delay = mean(dep_delay, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  arrange(desc(average_departure_delay))
+
+worst_day <- daily_delays |> slice_head(n = 1)
+
+kable(slice_head(daily_delays, n = 10), digits = 2,
+      caption = "Ten days with the highest average departure delays")
+```
+
+The worst day overall was `r format(worst_day$date, "%B %d, %Y")`, when the average departure delay was `r round(worst_day$average_departure_delay, 2)` minutes.
+
+```{r}
+daily_origin_delays <- flights_weather |>
+  mutate(date = make_date(year, month, day)) |>
+  group_by(date, origin) |>
+  summarise(
+    flights_with_delay_data = sum(!is.na(dep_delay)),
+    average_departure_delay = mean(dep_delay, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(flights_with_delay_data > 0) |>
+  arrange(desc(average_departure_delay))
+
+worst_airport_day <- daily_origin_delays |> slice_head(n = 1)
+
+kable(slice_head(daily_origin_delays, n = 10), digits = 2,
+      caption = "Ten airport-days with the highest average departure delays")
+```
+
+The worst single airport-day was at `r worst_airport_day$origin` on `r format(worst_airport_day$date, "%B %d, %Y")`, with an average departure delay of `r round(worst_airport_day$average_departure_delay, 2)` minutes.
+
+For the hourly analysis, I used the complete scheduled date and hour at each origin. This interpretation identifies when the worst airport-hour occurred, rather than combining the same clock hour across all 365 days.
+
+```{r}
+hourly_origin_delays <- flights_weather |>
+  mutate(scheduled_hour = floor_date(time_hour, unit = "hour")) |>
+  group_by(scheduled_hour, origin) |>
+  summarise(
+    flights_with_delay_data = sum(!is.na(dep_delay)),
+    average_departure_delay = mean(dep_delay, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(flights_with_delay_data > 0) |>
+  arrange(desc(average_departure_delay))
+
+worst_airport_hour <- hourly_origin_delays |> slice_head(n = 1)
+
+kable(slice_head(hourly_origin_delays, n = 10), digits = 2,
+      caption = "Ten airport-hours with the highest average departure delays")
+```
+
+The worst single airport-hour was at `r worst_airport_hour$origin`, beginning at `r format(worst_airport_hour$scheduled_hour, "%B %d, %Y at %I:00 %p %Z")`. Its average departure delay was `r round(worst_airport_hour$average_departure_delay, 2)` minutes.
+
+# Question 8
+
+I calculated mean arrival delay among flights with observed arrival delays, then joined the results to `airports` using `dest = faa`. The map focuses on the contiguous United States so that the main pattern is readable; destinations outside these limits remain in the joined table but are not shown on this particular map.
+
+```{r}
+destination_delays <- flights |>
+  group_by(dest) |>
+  summarise(
+    number_of_arrivals = sum(!is.na(arr_delay)),
+    average_arrival_delay = mean(arr_delay, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+airports_with_delays <- airports |>
+  left_join(destination_delays, by = c("faa" = "dest"))
+
+state_map <- map_data("state")
+
+ggplot() +
+  geom_polygon(
+    data = state_map,
+    aes(x = long, y = lat, group = group),
+    fill = "grey95",
+    color = "white",
+    linewidth = 0.25
+  ) +
+  geom_point(
+    data = airports_with_delays |>
+      filter(!is.na(average_arrival_delay),
+             between(lon, -125, -66), between(lat, 24, 50)),
+    aes(x = lon, y = lat, color = average_arrival_delay,
+        size = number_of_arrivals),
+    alpha = 0.80
+  ) +
+  scale_color_viridis_c(option = "C", name = "Mean arrival\ndelay (min)") +
+  scale_size_continuous(range = c(1.5, 7), name = "Observed arrivals") +
+  coord_quickmap(xlim = c(-125, -66), ylim = c(24, 50), expand = FALSE) +
+  labs(
+    title = "Average arrival delay by destination airport",
+    subtitle = "Flights departing New York City in 2013",
+    x = NULL,
+    y = NULL
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank()
+  )
+```
+
+# Question 9
+
+The analysis below examines departure delay because weather is matched to the scheduled departure airport and hour. Cancelled flights do not have observed departure delays, so this analysis describes delay length among flights that departed; it does not fully capture weather’s effect on cancellation risk.
+
+## Descriptive summaries
+
+```{r}
+weather_delay_summary <- flights_weather |>
+  filter(!is.na(dep_delay)) |>
+  summarise(
+    across(
+      c(temp, dewp, humid, wind_speed, precip, pressure, visib),
+      list(
+        correlation_with_delay = ~ cor(.x, dep_delay, use = "complete.obs"),
+        observations = ~ sum(complete.cases(.x, dep_delay))
+      )
+    )
+  ) |>
+  pivot_longer(
+    everything(),
+    names_to = c("weather_variable", ".value"),
+    names_pattern = "(.*)_(correlation_with_delay|observations)"
+  ) |>
+  arrange(desc(abs(correlation_with_delay)))
+
+kable(weather_delay_summary, digits = 3,
+      caption = "Flight-level correlations between weather and departure delay")
+```
+
+Simple correlations summarize linear relationships but may conceal thresholds, skewness, and seasonal or time-of-day patterns. Therefore, I also compare delays across meaningful weather categories.
+
+```{r}
+precipitation_summary <- flights_weather |>
+  filter(!is.na(dep_delay), !is.na(precip)) |>
+  mutate(
+    precipitation = case_when(
+      precip == 0 ~ "No precipitation",
+      precip <= 0.05 ~ "0.01-0.05 inches",
+      precip <= 0.10 ~ "0.06-0.10 inches",
+      TRUE ~ "More than 0.10 inches"
+    ),
+    precipitation = factor(
+      precipitation,
+      levels = c("No precipitation", "0.01-0.05 inches",
+                 "0.06-0.10 inches", "More than 0.10 inches")
+    )
+  ) |>
+  group_by(precipitation) |>
+  summarise(
+    flights = n(),
+    average_departure_delay = mean(dep_delay),
+    median_departure_delay = median(dep_delay),
+    percent_delayed_over_15_minutes = 100 * mean(dep_delay > 15),
+    .groups = "drop"
+  )
+
+kable(precipitation_summary, digits = 2,
+      caption = "Departure delay according to precipitation")
+
+ggplot(precipitation_summary,
+       aes(x = precipitation, y = average_departure_delay)) +
+  geom_col(fill = "#2B8CBE") +
+  labs(
+    title = "Average departure delay by precipitation amount",
+    x = "Precipitation during the scheduled departure hour",
+    y = "Average departure delay (minutes)"
+  ) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+```{r}
+visibility_summary <- flights_weather |>
+  filter(!is.na(dep_delay), !is.na(visib)) |>
+  mutate(
+    visibility_group = cut(
+      visib,
+      breaks = c(-Inf, 1, 3, 5, 9, Inf),
+      labels = c("1 mile or less", ">1-3 miles", ">3-5 miles",
+                 ">5-9 miles", ">9 miles")
+    )
+  ) |>
+  group_by(visibility_group) |>
+  summarise(
+    flights = n(),
+    average_departure_delay = mean(dep_delay),
+    median_departure_delay = median(dep_delay),
+    percent_delayed_over_15_minutes = 100 * mean(dep_delay > 15),
+    .groups = "drop"
+  )
+
+kable(visibility_summary, digits = 2,
+      caption = "Departure delay according to visibility")
+
+ggplot(visibility_summary,
+       aes(x = visibility_group, y = average_departure_delay)) +
+  geom_col(fill = "#7A0177") +
+  labs(
+    title = "Average departure delay by visibility",
+    x = "Visibility",
+    y = "Average departure delay (minutes)"
+  ) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+```{r}
+wind_data <- flights_weather |>
+  filter(!is.na(dep_delay), !is.na(wind_speed), is.finite(wind_speed)) |>
+  mutate(wind_quartile = ntile(wind_speed, 4)) |>
+  group_by(wind_quartile) |>
+  summarise(
+    minimum_wind_speed = min(wind_speed),
+    maximum_wind_speed = max(wind_speed),
+    flights = n(),
+    average_departure_delay = mean(dep_delay),
+    median_departure_delay = median(dep_delay),
+    percent_delayed_over_15_minutes = 100 * mean(dep_delay > 15),
+    .groups = "drop"
+  )
+
+kable(wind_data, digits = 2,
+      caption = "Departure delay across wind-speed quartiles")
+```
+
+## Multivariable exploratory model
+
+To compare variables measured in different units, I standardized each continuous weather variable to have mean 0 and standard deviation 1. The model also adjusts for departure airport, month, and scheduled hour because weather and delay patterns vary across these factors. The weather coefficients represent the estimated change in departure delay associated with a one-standard-deviation increase in that weather variable, holding the other included variables constant. This is an exploratory association model, not proof of a causal effect.
+
+```{r}
+model_data <- flights_weather |>
+  transmute(
+    dep_delay,
+    origin = factor(origin),
+    month = factor(month),
+    scheduled_hour = factor(hour),
+    temp,
+    humid,
+    wind_speed,
+    precip,
+    pressure,
+    visib
+  ) |>
+  filter(if_all(everything(), ~ !is.na(.x))) |>
+  filter(is.finite(wind_speed)) |>
+  mutate(
+    across(c(temp, humid, wind_speed, precip, pressure, visib),
+           ~ as.numeric(scale(.x)))
+  )
+
+weather_model <- lm(
+  dep_delay ~ temp + humid + wind_speed + precip + pressure + visib +
+    origin + month + scheduled_hour,
+  data = model_data
+)
+
+coefficient_table <- as.data.frame(summary(weather_model)$coefficients) |>
+  rownames_to_column("term") |>
+  as_tibble() |>
+  rename(
+    estimate_minutes = Estimate,
+    standard_error = `Std. Error`,
+    t_value = `t value`,
+    p_value = `Pr(>|t|)`
+  )
+
+weather_effects <- coefficient_table |>
+  filter(term %in% c("temp", "humid", "wind_speed", "precip", "pressure", "visib")) |>
+  mutate(absolute_estimate = abs(estimate_minutes)) |>
+  arrange(desc(absolute_estimate))
+
+kable(
+  weather_effects |>
+    select(term, estimate_minutes, standard_error, t_value, p_value),
+  digits = 3,
+  caption = "Adjusted associations between standardized weather variables and departure delay"
+)
+
+ggplot(weather_effects,
+       aes(x = reorder(term, estimate_minutes), y = estimate_minutes,
+           fill = estimate_minutes > 0)) +
+  geom_col(show.legend = FALSE) +
+  geom_hline(yintercept = 0, color = "grey30") +
+  coord_flip() +
+  scale_fill_manual(values = c("TRUE" = "#D7301F", "FALSE" = "#3182BD")) +
+  labs(
+    title = "Adjusted weather associations with departure delay",
+    subtitle = "Estimated minutes per one-standard-deviation increase",
+    x = NULL,
+    y = "Estimated change in departure delay (minutes)"
+  )
+```
+
+## Conclusion
+
+In the adjusted exploratory model, **`r weather_effects$term[1]`** had the largest association with departure delay in absolute magnitude. A one-standard-deviation increase in this variable was associated with an estimated `r round(weather_effects$estimate_minutes[1], 2)`-minute `r ifelse(weather_effects$estimate_minutes[1] >= 0, "increase", "decrease")` in departure delay, after adjustment for the other included weather measures, airport, month, and scheduled hour. The precipitation and visibility summaries should be considered alongside the regression because hazardous weather relationships may be nonlinear. Overall, the results identify the weather phenomena most strongly associated with delay length among flights that departed, but they should not be described as causal “impacts” without additional modeling of cancellations, airline operations, congestion, and other confounders.
+
+# Reproducibility Information
+
+```{r}
+sessionInfo()
+```
