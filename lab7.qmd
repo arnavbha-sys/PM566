@@ -1,0 +1,317 @@
+---
+title: "Lab 7 - Web Scraping and Regular Expressions"
+link-citations: true
+toc: false
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(
+  include = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+
+library(httr)
+library(xml2)
+library(stringr)
+```
+
+# Learning goals
+
+- Use real-time data pulled from the internet.
+- Use regular expressions to parse the information.
+- Practice GitHub skills.
+
+# Lab description
+
+In this lab, we will work with the [NCBI API](https://www.ncbi.nlm.nih.gov/home/develop/api/) to make queries and extract information using XML and regular expressions.
+
+## Question 1: How many SARS-CoV-2 papers?
+
+The following code downloads the PubMed search page, locates the number of search results using XPath, and converts that value to a number.
+
+```{r counter-pubmed}
+# Download the PubMed search page
+website <- xml2::read_html(
+  "https://pubmed.ncbi.nlm.nih.gov/?term=sars-cov-2"
+)
+
+# Locate the result count
+counts <- xml2::xml_find_first(
+  website,
+  "//div[contains(@class, 'results-amount')]//span[contains(@class, 'value')]"
+)
+
+# Turn the result count into text
+counts <- xml2::xml_text(counts)
+
+# Extract a number that may contain commas or periods
+totalcount <- stringr::str_extract(
+  counts,
+  "[0-9][0-9,.]*"
+)
+
+# Remove commas and periods before converting to numeric
+totalcount <- gsub("[,.]", "", totalcount)
+
+totalcount <- as.numeric(totalcount)
+
+print(totalcount)
+```
+
+The result represents the number of papers returned by PubMed for the search term “SARS-CoV-2” at the time this document was rendered. Because PubMed is continually updated, this number may change over time.
+
+## Question 2: Get article abstracts and authors
+
+The following code looks for the PubMed abstract file in the project directory or the Downloads directory.
+
+Before rendering this document, search PubMed for:
+
+[https://pubmed.ncbi.nlm.nih.gov/?term=sars-cov-2%20california](https://pubmed.ncbi.nlm.nih.gov/?term=sars-cov-2%20california)
+
+Limit the results to 2020 and 2021. Then select **Save**, choose **All results**, choose **Abstract (text)** as the format, and download the file. Place the downloaded file in the same folder as this `.qmd` file.
+
+```{r get-ids}
+# Possible locations of the downloaded PubMed file
+possible_files <- c(
+  "abstract-sars-cov-2-set.txt",
+  path.expand("~/Downloads/abstract-sars-cov-2-set.txt")
+)
+
+# Select the first location where the file exists
+abstract_file <- possible_files[file.exists(possible_files)][1]
+
+if (is.na(abstract_file)) {
+  stop(
+    paste(
+      "The file 'abstract-sars-cov-2-set.txt' was not found.",
+      "Download it from PubMed and place it in the same folder as this QMD file."
+    )
+  )
+}
+
+# Read the file; each line initially becomes a separate character value
+abstracts <- readLines(
+  abstract_file,
+  warn = FALSE,
+  encoding = "UTF-8"
+)
+
+# Combine all lines into one character string
+abstracts <- paste(abstracts, collapse = "\n")
+
+# Split the text wherever three or more newlines occur
+abstracts <- unlist(
+  strsplit(abstracts, split = "\n[[:space:]]*\n[[:space:]]*\n")
+)
+
+# Remove any empty entries
+abstracts <- abstracts[nzchar(trimws(abstracts))]
+
+# Preserve the original entries for Question 4
+abstracts_original <- abstracts
+
+# Create a flattened version for the institution search
+abstracts_flat <- gsub("\n", " ", abstracts)
+
+# Replace multiple spaces with one space
+abstracts_flat <- gsub("[[:space:]]+", " ", abstracts_flat)
+
+# Display the number of article records read
+length(abstracts_original)
+```
+
+Each element of `abstracts_original` now represents one PubMed article record. The version named `abstracts_flat` contains the same records with line breaks and repeated spaces removed.
+
+## Question 3: Distribution of universities
+
+In PubMed records, affiliations usually appear in the author-information section. Institutions may be written with the word “University” before or after the institution name. Research organizations may also contain a phrase such as “Institute of.”
+
+The following regular expression identifies those three general formats.
+
+```{r univ-institute-regex}
+institution_pattern <- paste0(
+  "(?:",
+  
+  # Format: University of ...
+  "University of\\s+",
+  "[A-Z][A-Za-z&'’.-]*",
+  "(?:\\s+(?:[A-Z][A-Za-z&'’.-]*|of|the|and|at|in)){0,7}",
+  
+  "|",
+  
+  # Format: ... University
+  "[A-Z][A-Za-z&'’.-]*",
+  "(?:\\s+(?:[A-Z][A-Za-z&'’.-]*|of|the|and|at|in)){0,7}",
+  "\\s+University",
+  
+  "|",
+  
+  # Format: ... Institute of ...
+  "[A-Z][A-Za-z&'’.-]*",
+  "(?:\\s+(?:[A-Z][A-Za-z&'’.-]*|of|the|and|at|in)){0,5}",
+  "\\s+Institute of\\s+",
+  "[A-Z][A-Za-z&'’.-]*",
+  "(?:\\s+(?:[A-Z][A-Za-z&'’.-]*|of|the|and|at|in)){0,7}",
+  
+  ")"
+)
+
+institution <- stringr::str_extract_all(
+  abstracts_flat,
+  institution_pattern
+)
+
+institution <- unlist(institution)
+
+# Remove extra spaces and punctuation from the ends
+institution <- stringr::str_squish(institution)
+institution <- stringr::str_remove_all(
+  institution,
+  "^[,;:. ]+|[,;:. ]+$"
+)
+
+# Count and sort institutions from most to least frequent
+institution_counts <- sort(
+  table(institution),
+  decreasing = TRUE
+)
+
+# Display the 10 most common institutions
+top_10_institutions <- head(institution_counts, 10)
+
+knitr::kable(
+  data.frame(
+    Institution = names(top_10_institutions),
+    Frequency = as.integer(top_10_institutions),
+    row.names = NULL
+  ),
+  caption = "Ten Most Common Institutions"
+)
+```
+
+The results could be improved by standardizing different versions of the same institution’s name. For example, an institution might be written using its full name in one record and an abbreviation in another. Departments, schools, punctuation, and campus names can also cause a single university to be counted as several different institutions. A more advanced approach could extract the complete affiliation fields first and then use a manually constructed lookup table to combine alternate names. The regular expression could also be expanded to recognize institutions that do not contain the words “University” or “Institute.”
+
+## Question 4: Make a tidy dataset
+
+For this question, the original text is retained so that the line and paragraph structure of each PubMed record can be used.
+
+```{r one-string-per-response}
+# Restore the original article records with line breaks
+abstracts <- abstracts_original
+
+# Display the number of article records
+length(abstracts)
+```
+
+The journal appears on the first line of each record, immediately after the citation number.
+
+```{r extracting-journal}
+# Extract the first line, which contains the citation number and journal
+journal <- stringr::str_extract(
+  abstracts,
+  "(?m)^\\s*[0-9]+\\.\\s*[^\\n]+"
+)
+
+# Remove the citation number from the journal name
+journal <- stringr::str_remove(
+  journal,
+  "^\\s*[0-9]+\\.\\s*"
+)
+
+journal <- stringr::str_squish(journal)
+```
+
+The title is the second nonempty section in each record. The following code extracts it and removes any internal line breaks.
+
+```{r process-titles}
+titles <- sapply(
+  abstracts,
+  function(x) {
+    sections <- unlist(
+      strsplit(x, split = "\n[[:space:]]*\n")
+    )
+    
+    sections <- sections[nzchar(trimws(sections))]
+    
+    if (length(sections) >= 2) {
+      sections[2]
+    } else {
+      NA_character_
+    }
+  },
+  USE.NAMES = FALSE
+)
+
+# Replace line breaks and repeated spaces
+titles <- stringr::str_squish(
+  gsub("\n", " ", titles)
+)
+```
+
+The author list is the third nonempty section in each record. It can be extracted using the same method.
+
+```{r process-authors}
+authors <- sapply(
+  abstracts,
+  function(x) {
+    sections <- unlist(
+      strsplit(x, split = "\n[[:space:]]*\n")
+    )
+    
+    sections <- sections[nzchar(trimws(sections))]
+    
+    if (length(sections) >= 3) {
+      sections[3]
+    } else {
+      NA_character_
+    }
+  },
+  USE.NAMES = FALSE
+)
+
+# Replace line breaks and repeated spaces
+authors <- stringr::str_squish(
+  gsub("\n", " ", authors)
+)
+```
+
+The author-affiliation section begins with “Author information:” and ends at the next blank line.
+
+```{r extracting-affiliations}
+affiliations <- stringr::str_extract(
+  abstracts,
+  "(?s)Author information:.*?(?=\\n[[:space:]]*\\n|$)"
+)
+
+# Remove the section heading
+affiliations <- stringr::str_remove(
+  affiliations,
+  "^Author information:\\s*"
+)
+
+# Replace line breaks and repeated spaces
+affiliations <- stringr::str_squish(
+  gsub("\n", " ", affiliations)
+)
+```
+
+Finally, the journal, article title, authors, and affiliations are combined into one tidy data frame.
+
+```{r build-db}
+papers <- data.frame(
+  journal = journal,
+  title = titles,
+  authors = authors,
+  affiliations = affiliations,
+  stringsAsFactors = FALSE
+)
+
+# Print the first five records
+knitr::kable(
+  head(papers, 5),
+  caption = "First Five Articles in the Tidy PubMed Dataset"
+)
+```
+
+The completed dataset contains one row per paper and separate columns for the journal, article title, authors, and author affiliations.
