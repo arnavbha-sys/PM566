@@ -1,0 +1,635 @@
+---
+title: "Vehicle Characteristics and Highway Fuel Efficiency"
+author: "Arnav Bhatia"
+date: "October 25, 2026"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+    code-fold: true
+    code-summary: "Show code"
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(ggplot2)
+library(dplyr)
+library(knitr)
+
+theme_set(
+  theme_minimal(base_size = 13) +
+    theme(
+      plot.title = element_text(face = "bold"),
+      plot.subtitle = element_text(color = "gray30"),
+      legend.position = "bottom"
+    )
+)
+
+vehicle_data <- ggplot2::mpg |>
+  mutate(
+    manufacturer = factor(manufacturer),
+    model = factor(model),
+    year = factor(year),
+    cylinders = factor(cyl),
+    transmission = if_else(grepl("^auto", trans),
+                           "Automatic", "Manual"),
+    transmission = factor(transmission),
+    drive_type = recode(
+      drv,
+      "4" = "Four-wheel drive",
+      "f" = "Front-wheel drive",
+      "r" = "Rear-wheel drive"
+    ),
+    drive_type = factor(
+      drive_type,
+      levels = c(
+        "Front-wheel drive",
+        "Rear-wheel drive",
+        "Four-wheel drive"
+      )
+    ),
+    vehicle_class = factor(class),
+    fuel_type = recode(
+      fl,
+      "c" = "CNG",
+      "d" = "Diesel",
+      "e" = "Ethanol",
+      "p" = "Premium gasoline",
+      "r" = "Regular gasoline"
+    ),
+    average_mpg = (cty + hwy) / 2
+  ) |>
+  select(
+    manufacturer,
+    model,
+    year,
+    displ,
+    cylinders,
+    transmission,
+    drive_type,
+    vehicle_class,
+    fuel_type,
+    city_mpg = cty,
+    highway_mpg = hwy,
+    average_mpg
+  )
+```
+
+# Introduction
+
+Fuel efficiency is an important characteristic of passenger vehicles because it
+affects fuel costs, energy consumption, and environmental impact. Vehicle fuel
+efficiency may be influenced by several design characteristics, including
+engine displacement, vehicle class, transmission type, and drivetrain. Larger
+engines generally consume more fuel, while drivetrain systems may introduce
+additional differences in efficiency.
+
+This report analyzes the `mpg` dataset included with the `ggplot2` R package.
+The dataset contains fuel-economy measurements collected by the United States
+Environmental Protection Agency for vehicle models manufactured in 1999 and
+2008. Each observation represents one vehicle configuration.
+
+The primary research question is:
+
+**How is engine displacement associated with highway fuel efficiency, and does
+highway fuel efficiency differ across drivetrain types?**
+
+The analysis also considers whether fuel efficiency differs by vehicle class
+and transmission type.
+
+# Data Preparation
+
+The original dataset was accessed directly from the `ggplot2` package using
+`ggplot2::mpg`. Because the dataset is distributed with the package, no
+separate data file was required.
+
+The data preparation process included the following steps:
+
+1. Manufacturer, model, year, cylinder count, and vehicle class were converted
+   to categorical variables.
+2. Detailed transmission descriptions were grouped into automatic and manual
+   transmission categories.
+3. Drivetrain codes were changed into descriptive labels.
+4. Fuel-type codes were changed into descriptive labels.
+5. A new variable, average miles per gallon, was calculated as the mean of city
+   and highway fuel efficiency.
+6. Variables were renamed to improve readability.
+
+```{r}
+#| label: data-quality-table
+
+quality_table <- data.frame(
+  Measure = c(
+    "Number of observations",
+    "Number of variables",
+    "Duplicate rows",
+    "Missing values",
+    "Unique manufacturers",
+    "Unique vehicle classes"
+  ),
+  Value = c(
+    nrow(vehicle_data),
+    ncol(vehicle_data),
+    sum(duplicated(vehicle_data)),
+    sum(is.na(vehicle_data)),
+    n_distinct(vehicle_data$manufacturer),
+    n_distinct(vehicle_data$vehicle_class)
+  )
+)
+
+kable(
+  quality_table,
+  caption = "Basic data-quality assessment",
+  align = c("l", "r")
+)
+```
+
+The prepared dataset contains `r nrow(vehicle_data)` vehicle configurations and
+`r ncol(vehicle_data)` variables. It includes
+`r n_distinct(vehicle_data$manufacturer)` manufacturers and
+`r n_distinct(vehicle_data$vehicle_class)` vehicle classes. There are
+`r sum(is.na(vehicle_data))` missing values in the prepared dataset, so no
+imputation or removal of observations was required.
+
+# Exploratory Analysis
+
+## Characteristics of the Dataset
+
+The main variables used in this analysis are shown below.
+
+```{r}
+#| label: variable-description-table
+
+variable_table <- data.frame(
+  Variable = c(
+    "manufacturer",
+    "model",
+    "year",
+    "displ",
+    "cylinders",
+    "transmission",
+    "drive_type",
+    "vehicle_class",
+    "city_mpg",
+    "highway_mpg",
+    "average_mpg"
+  ),
+  Description = c(
+    "Vehicle manufacturer",
+    "Vehicle model",
+    "Model year",
+    "Engine displacement in liters",
+    "Number of engine cylinders",
+    "Automatic or manual transmission",
+    "Front-wheel, rear-wheel, or four-wheel drive",
+    "Vehicle classification",
+    "Estimated city miles per gallon",
+    "Estimated highway miles per gallon",
+    "Mean of city and highway miles per gallon"
+  )
+)
+
+kable(
+  variable_table,
+  caption = "Variables included in the prepared dataset",
+  align = c("l", "l")
+)
+```
+
+## Summary of Key Numeric Variables
+
+```{r}
+#| label: numeric-summary-table
+
+numeric_summary <- vehicle_data |>
+  summarise(
+    across(
+      c(displ, city_mpg, highway_mpg, average_mpg),
+      list(
+        Minimum = ~min(.x),
+        Mean = ~mean(.x),
+        Median = ~median(.x),
+        SD = ~sd(.x),
+        Maximum = ~max(.x)
+      )
+    )
+  ) |>
+  tidyr::pivot_longer(
+    cols = everything(),
+    names_to = c("Variable", "Statistic"),
+    names_pattern = "(.*)_(Minimum|Mean|Median|SD|Maximum)",
+    values_to = "Value"
+  ) |>
+  tidyr::pivot_wider(
+    names_from = Statistic,
+    values_from = Value
+  ) |>
+  mutate(
+    Variable = recode(
+      Variable,
+      displ = "Engine displacement (liters)",
+      city_mpg = "City fuel efficiency (MPG)",
+      highway_mpg = "Highway fuel efficiency (MPG)",
+      average_mpg = "Average fuel efficiency (MPG)"
+    ),
+    across(where(is.numeric), ~round(.x, 2))
+  )
+
+kable(
+  numeric_summary,
+  caption = "Summary statistics for key numeric variables",
+  align = c("l", "r", "r", "r", "r", "r")
+)
+```
+
+Highway fuel efficiency ranges from
+`r min(vehicle_data$highway_mpg)` to
+`r max(vehicle_data$highway_mpg)` miles per gallon. The mean highway fuel
+efficiency is `r round(mean(vehicle_data$highway_mpg), 1)` MPG, compared with a
+mean city fuel efficiency of
+`r round(mean(vehicle_data$city_mpg), 1)` MPG.
+
+## Distribution of Highway Fuel Efficiency
+
+```{r}
+#| label: highway-mpg-distribution
+#| fig-width: 8
+#| fig-height: 5
+#| fig-cap: "Distribution of highway fuel efficiency among vehicle configurations."
+
+ggplot(vehicle_data, aes(x = highway_mpg)) +
+  geom_histogram(
+    binwidth = 2,
+    boundary = 0,
+    color = "white",
+    fill = "#2C7FB8"
+  ) +
+  geom_vline(
+    xintercept = mean(vehicle_data$highway_mpg),
+    color = "#D95F0E",
+    linewidth = 1,
+    linetype = "dashed"
+  ) +
+  labs(
+    title = "Distribution of Highway Fuel Efficiency",
+    subtitle = "The dashed line represents the sample mean",
+    x = "Highway fuel efficiency (MPG)",
+    y = "Number of vehicle configurations"
+  )
+```
+
+The distribution is concentrated primarily between approximately 20 and 30
+MPG. A smaller number of vehicle configurations have highway efficiency above
+35 MPG.
+
+## Vehicle Configurations by Class
+
+```{r}
+#| label: vehicle-class-counts
+#| fig-width: 8
+#| fig-height: 5
+#| fig-cap: "Number of vehicle configurations represented in each vehicle class."
+
+class_counts <- vehicle_data |>
+  count(vehicle_class, sort = TRUE)
+
+ggplot(
+  class_counts,
+  aes(x = reorder(vehicle_class, n), y = n)
+) +
+  geom_col(fill = "#31A354") +
+  coord_flip() +
+  labs(
+    title = "Vehicle Configurations by Class",
+    x = "Vehicle class",
+    y = "Number of configurations"
+  )
+```
+
+SUVs and compact vehicles are among the most frequently represented vehicle
+classes. Subcompact, midsize, pickup, minivan, and two-seater vehicles are also
+included.
+
+# Preliminary Results
+
+## Highway Fuel Efficiency by Drivetrain
+
+```{r}
+#| label: drivetrain-summary-table
+
+drive_summary <- vehicle_data |>
+  group_by(drive_type) |>
+  summarise(
+    Vehicles = n(),
+    `Mean highway MPG` = mean(highway_mpg),
+    `SD highway MPG` = sd(highway_mpg),
+    `Median highway MPG` = median(highway_mpg),
+    `Minimum highway MPG` = min(highway_mpg),
+    `Maximum highway MPG` = max(highway_mpg),
+    .groups = "drop"
+  ) |>
+  mutate(
+    across(
+      c(
+        `Mean highway MPG`,
+        `SD highway MPG`,
+        `Median highway MPG`
+      ),
+      ~round(.x, 1)
+    )
+  )
+
+kable(
+  drive_summary,
+  caption = "Highway fuel efficiency by drivetrain",
+  align = c("l", "r", "r", "r", "r", "r", "r")
+)
+```
+
+```{r}
+#| label: drivetrain-boxplot
+#| fig-width: 8
+#| fig-height: 5
+#| fig-cap: "Highway fuel efficiency by drivetrain type."
+
+ggplot(
+  vehicle_data,
+  aes(x = drive_type, y = highway_mpg, fill = drive_type)
+) +
+  geom_boxplot(width = 0.65, alpha = 0.8, outlier.alpha = 0.6) +
+  scale_fill_brewer(palette = "Set2", guide = "none") +
+  labs(
+    title = "Highway Fuel Efficiency Differs by Drivetrain",
+    x = "Drivetrain",
+    y = "Highway fuel efficiency (MPG)"
+  )
+```
+
+Front-wheel-drive vehicles have the highest mean highway fuel efficiency in the
+dataset, while four-wheel-drive vehicles have the lowest mean. However, these
+unadjusted comparisons do not account for differences in engine displacement
+or vehicle composition across drivetrain categories.
+
+## Engine Displacement and Highway Fuel Efficiency
+
+```{r}
+#| label: displacement-plot
+#| fig-width: 8
+#| fig-height: 5.5
+#| fig-cap: "Relationship between engine displacement and highway fuel efficiency, stratified by drivetrain."
+
+ggplot(
+  vehicle_data,
+  aes(
+    x = displ,
+    y = highway_mpg,
+    color = drive_type
+  )
+) +
+  geom_point(size = 2.3, alpha = 0.7) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    linewidth = 0.9
+  ) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Larger Engines Are Associated with Lower Highway MPG",
+    subtitle = "Lines represent separate linear trends by drivetrain",
+    x = "Engine displacement (liters)",
+    y = "Highway fuel efficiency (MPG)",
+    color = "Drivetrain"
+  )
+```
+
+The scatterplot shows a clear negative relationship between engine displacement
+and highway fuel efficiency. Vehicles with larger engines generally achieve
+fewer highway miles per gallon. This pattern is visible within each drivetrain
+category, although the strength and location of the relationship vary.
+
+```{r}
+#| label: correlation-table
+
+correlation_value <- cor(
+  vehicle_data$displ,
+  vehicle_data$highway_mpg
+)
+
+correlation_table <- data.frame(
+  Variables = "Engine displacement and highway MPG",
+  `Pearson correlation` = round(correlation_value, 3)
+)
+
+kable(
+  correlation_table,
+  caption = "Correlation between engine displacement and highway fuel efficiency",
+  align = c("l", "r")
+)
+```
+
+The Pearson correlation between engine displacement and highway fuel efficiency
+is `r round(correlation_value, 3)`. This indicates a strong negative linear
+association: highway fuel efficiency tends to decrease as engine displacement
+increases.
+
+## Linear Regression Analysis
+
+A multiple linear regression model was used to estimate the association between
+engine displacement and highway fuel efficiency while accounting for
+drivetrain. The outcome was highway MPG, and the predictors were engine
+displacement and drivetrain category.
+
+```{r}
+#| label: regression-model
+
+fuel_model <- lm(
+  highway_mpg ~ displ + drive_type,
+  data = vehicle_data
+)
+
+model_coefficients <- summary(fuel_model)$coefficients |>
+  as.data.frame()
+
+model_table <- data.frame(
+  Term = rownames(model_coefficients),
+  Estimate = model_coefficients[, "Estimate"],
+  `Standard error` = model_coefficients[, "Std. Error"],
+  `p-value` = model_coefficients[, "Pr(>|t|)"],
+  row.names = NULL,
+  check.names = FALSE
+) |>
+  mutate(
+    Term = recode(
+      Term,
+      "(Intercept)" = "Intercept",
+      "displ" = "Engine displacement (per liter)",
+      "drive_typeRear-wheel drive" =
+        "Rear-wheel vs. front-wheel drive",
+      "drive_typeFour-wheel drive" =
+        "Four-wheel vs. front-wheel drive"
+    ),
+    Estimate = round(Estimate, 2),
+    `Standard error` = round(`Standard error`, 2),
+    `p-value` = format.pval(
+      `p-value`,
+      digits = 3,
+      eps = 0.001
+    )
+  )
+
+kable(
+  model_table,
+  caption = "Linear regression predicting highway fuel efficiency",
+  align = c("l", "r", "r", "r")
+)
+```
+
+```{r}
+#| label: model-statistics
+#| include: false
+
+model_summary <- summary(fuel_model)
+displacement_effect <- coef(fuel_model)[["displ"]]
+model_r_squared <- model_summary$r.squared
+model_adjusted_r_squared <- model_summary$adj.r.squared
+```
+
+After accounting for drivetrain, a one-liter increase in engine displacement
+was associated with an estimated
+`r abs(round(displacement_effect, 2))`-MPG decrease in highway fuel efficiency.
+The model explained approximately
+`r round(100 * model_r_squared, 1)`% of the observed variation in highway MPG.
+The adjusted R-squared value was
+`r round(model_adjusted_r_squared, 3)`.
+
+These findings describe associations within the dataset and should not be
+interpreted as proof that increasing engine displacement directly causes a
+specific reduction in fuel efficiency.
+
+## Fuel Efficiency by Vehicle Class
+
+```{r}
+#| label: class-summary-table
+
+class_summary <- vehicle_data |>
+  group_by(vehicle_class) |>
+  summarise(
+    Vehicles = n(),
+    `Mean city MPG` = mean(city_mpg),
+    `Mean highway MPG` = mean(highway_mpg),
+    .groups = "drop"
+  ) |>
+  arrange(desc(`Mean highway MPG`)) |>
+  mutate(
+    across(
+      c(`Mean city MPG`, `Mean highway MPG`),
+      ~round(.x, 1)
+    )
+  )
+
+kable(
+  class_summary,
+  caption = "Mean fuel efficiency by vehicle class",
+  align = c("l", "r", "r", "r")
+)
+```
+
+```{r}
+#| label: class-efficiency-plot
+#| fig-width: 8
+#| fig-height: 5
+#| fig-cap: "Mean highway fuel efficiency by vehicle class. Error bars represent 95% confidence intervals."
+
+class_plot_data <- vehicle_data |>
+  group_by(vehicle_class) |>
+  summarise(
+    mean_highway_mpg = mean(highway_mpg),
+    standard_error = sd(highway_mpg) / sqrt(n()),
+    lower_ci = mean_highway_mpg - 1.96 * standard_error,
+    upper_ci = mean_highway_mpg + 1.96 * standard_error,
+    .groups = "drop"
+  )
+
+ggplot(
+  class_plot_data,
+  aes(
+    x = reorder(vehicle_class, mean_highway_mpg),
+    y = mean_highway_mpg
+  )
+) +
+  geom_col(fill = "#756BB1", width = 0.7) +
+  geom_errorbar(
+    aes(ymin = lower_ci, ymax = upper_ci),
+    width = 0.18
+  ) +
+  coord_flip() +
+  labs(
+    title = "Mean Highway Fuel Efficiency by Vehicle Class",
+    x = "Vehicle class",
+    y = "Mean highway fuel efficiency (MPG)"
+  )
+```
+
+Compact, subcompact, and midsize vehicles have relatively high mean highway
+fuel efficiency. SUVs and pickup trucks have lower average highway efficiency,
+which may partly reflect their larger engines and heavier vehicle designs.
+
+## Fuel Efficiency by Transmission Type
+
+```{r}
+#| label: transmission-summary-table
+
+transmission_summary <- vehicle_data |>
+  group_by(transmission) |>
+  summarise(
+    Vehicles = n(),
+    `Mean city MPG` = mean(city_mpg),
+    `Mean highway MPG` = mean(highway_mpg),
+    `Mean engine displacement` = mean(displ),
+    .groups = "drop"
+  ) |>
+  mutate(
+    across(where(is.numeric) & !Vehicles, ~round(.x, 1))
+  )
+
+kable(
+  transmission_summary,
+  caption = "Vehicle characteristics by transmission type",
+  align = c("l", "r", "r", "r", "r")
+)
+```
+
+Manual-transmission vehicles have a somewhat higher mean highway MPG in this
+dataset. This comparison is descriptive and may be influenced by differences
+in engine size, vehicle class, manufacturer, and model year.
+
+# Conclusion
+
+This analysis found a strong negative association between engine displacement
+and highway fuel efficiency. Vehicle configurations with larger engines
+generally achieved fewer highway miles per gallon, even after drivetrain was
+included in a multiple linear regression model.
+
+Fuel efficiency also varied across drivetrain and vehicle-class categories.
+Front-wheel-drive vehicles had the highest mean highway MPG, while
+four-wheel-drive vehicles had the lowest. Compact and subcompact vehicles were
+among the most fuel-efficient classes, whereas SUVs and pickup trucks had lower
+average highway MPG.
+
+Several limitations should be considered. The dataset includes only vehicle
+configurations from 1999 and 2008, so the results may not represent newer
+vehicles. The observations are also not a random sample of all vehicles on the
+road. In addition, the regression model does not include every characteristic
+that could affect fuel efficiency, such as vehicle weight, horsepower, or
+aerodynamic design. Therefore, the findings should be interpreted as
+descriptive associations rather than causal effects.
+
+Overall, the analysis suggests that engine size, drivetrain, and vehicle class
+are important characteristics associated with highway fuel efficiency.
