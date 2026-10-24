@@ -1,0 +1,336 @@
+---
+title: "Lab 8 - Efficiency and Parallelization"
+link-citations: true
+toc: false
+---
+
+# Learning goals
+
+In this lab, you are expected to learn/put into practice the following skills:
+
+- Evaluate whether a problem can be parallelized.
+- Practice using the `parallel` package.
+
+```{r setup}
+set.seed(1234)
+```
+
+## Problem 1: Vectorization
+
+The following functions can be written more efficiently without using
+parallelization. For each function, I created a faster version, verified its
+output, and compared its speed with the original version.
+
+### 1. Generating a matrix of Poisson random variables
+
+The original function repeatedly uses `rbind()` inside a loop. This is
+inefficient because R must repeatedly allocate and copy the growing matrix.
+The alternative generates all values at once and places them into a matrix.
+
+```{r p2-fun1}
+fun1 <- function(n = 100, k = 4, lambda = 4) {
+  x <- NULL
+  
+  for (i in seq_len(n)) {
+    x <- rbind(x, rpois(k, lambda))
+  }
+  
+  return(x)
+}
+
+fun1alt <- function(n = 100, k = 4, lambda = 4) {
+  matrix(
+    rpois(n * k, lambda),
+    nrow = n,
+    ncol = k,
+    byrow = TRUE
+  )
+}
+```
+
+Both functions should produce matrices with the same dimensions.
+
+```{r check-fun1-dimensions}
+set.seed(1234)
+x1 <- fun1(n = 10000, k = 4, lambda = 4)
+
+set.seed(5678)
+x1alt <- fun1alt(n = 10000, k = 4, lambda = 4)
+
+dim(x1)
+dim(x1alt)
+
+identical(dim(x1), dim(x1alt))
+```
+
+The individual values will not necessarily be identical because they are
+randomly generated. However, the values should follow similar Poisson
+distributions.
+
+```{r check-fun1-distributions}
+comparison_fun1 <- data.frame(
+  function_name = c("fun1", "fun1alt"),
+  mean = c(mean(x1), mean(x1alt)),
+  variance = c(var(as.vector(x1)), var(as.vector(x1alt))),
+  minimum = c(min(x1), min(x1alt)),
+  maximum = c(max(x1), max(x1alt))
+)
+
+comparison_fun1
+```
+
+Both functions produce values with means and variances close to the specified
+Poisson mean of 4.
+
+The following benchmark compares their execution speeds.
+
+```{r benchmark-fun1}
+microbenchmark::microbenchmark(
+  original = fun1(),
+  vectorized = fun1alt(),
+  times = 100
+)
+```
+
+The vectorized version should generally be faster because it creates the
+complete matrix in one operation instead of repeatedly expanding it with
+`rbind()`.
+
+### 2. Finding the maximum value of each column
+
+```{r p2-fun2}
+# Data-generating process: 10 x 1,000 matrix
+set.seed(1234)
+x <- matrix(rnorm(1e4), nrow = 10)
+
+fun2 <- function(x) {
+  apply(x, 2, max)
+}
+
+fun2alt <- function(x) {
+  do.call(
+    pmax,
+    lapply(seq_len(nrow(x)), function(i) x[i, ])
+  )
+}
+```
+
+The alternative function passes the rows of the matrix to `pmax()`.
+This calculates the maximum across rows for every column.
+
+The outputs of the two functions are identical.
+
+```{r check-fun2-output}
+output_fun2 <- fun2(x)
+output_fun2alt <- fun2alt(x)
+
+all.equal(
+  unname(output_fun2),
+  unname(output_fun2alt)
+)
+
+head(output_fun2)
+head(output_fun2alt)
+```
+
+The execution speeds are compared below.
+
+```{r benchmark-fun2}
+microbenchmark::microbenchmark(
+  original = fun2(x),
+  vectorized = fun2alt(x),
+  times = 100
+)
+```
+
+The `pmax()` version avoids repeatedly calling a separate function for every
+column and should generally be faster for this matrix.
+
+## Problem 3: Parallelization
+
+Bootstrapping involves repeating the same calculation on many independently
+resampled datasets. Therefore, the bootstrap replications can be distributed
+across multiple processor cores.
+
+### 1. Parallel bootstrap function
+
+The function below uses `parallel::mclapply()` on macOS and Linux. On Windows,
+where forked processing is unavailable, it creates a PSOCK cluster and uses
+`parallel::parLapply()` instead.
+
+When `ncpus = 1L`, the function uses the original serial `lapply()` method.
+
+```{r p3-boot-fun}
+my_boot <- function(dat, stat, R, ncpus = 1L) {
+  
+  # Check the arguments
+  stopifnot(
+    is.data.frame(dat) || is.matrix(dat),
+    is.function(stat),
+    length(R) == 1L,
+    R >= 1,
+    length(ncpus) == 1L,
+    ncpus >= 1
+  )
+  
+  R <- as.integer(R)
+  ncpus <- as.integer(ncpus)
+  
+  # Generate the bootstrap row indices
+  n <- nrow(dat)
+  idx <- matrix(
+    sample.int(n, n * R, replace = TRUE),
+    nrow = n,
+    ncol = R
+  )
+  
+  bootstrap_once <- function(i) {
+    stat(dat[idx[, i], , drop = FALSE])
+  }
+  
+  if (ncpus == 1L) {
+    
+    # Serial calculation
+    ans <- lapply(seq_len(R), bootstrap_once)
+    
+  } else if (.Platform$OS.type != "windows") {
+    
+    # Parallel calculation for macOS and Linux
+    ans <- parallel::mclapply(
+      seq_len(R),
+      bootstrap_once,
+      mc.cores = ncpus
+    )
+    
+  } else {
+    
+    # Parallel calculation for Windows
+    cl <- parallel::makeCluster(ncpus)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+    
+    parallel::clusterExport(
+      cl,
+      varlist = c("dat", "stat", "idx"),
+      envir = environment()
+    )
+    
+    ans <- parallel::parLapply(
+      cl,
+      seq_len(R),
+      function(i) {
+        stat(dat[idx[, i], , drop = FALSE])
+      }
+    )
+  }
+  
+  # Convert the list of estimates into a matrix
+  ans <- do.call(rbind, ans)
+  
+  return(ans)
+}
+```
+
+### 2. Checking the bootstrap confidence intervals
+
+The statistic used for this example contains the estimated intercept and slope
+from an ordinary least-squares regression.
+
+```{r p3-test-boot}
+# Bootstrap statistic for an OLS regression
+my_stat <- function(d) {
+  coef(lm(y ~ x, data = d))
+}
+
+# Simulate the data
+set.seed(1)
+
+n <- 500
+R <- 1e4
+
+x <- rnorm(n)
+y <- 5 * x + rnorm(n)
+
+simulation_data <- data.frame(x = x, y = y)
+
+# Parametric confidence intervals
+ans0 <- confint(lm(y ~ x, data = simulation_data))
+
+# Bootstrap estimates
+set.seed(1)
+
+ans1 <- my_boot(
+  dat = simulation_data,
+  stat = my_stat,
+  R = R,
+  ncpus = 2L
+)
+
+# Bootstrap percentile confidence intervals
+ans1_ci <- t(
+  apply(
+    ans1,
+    2,
+    quantile,
+    probs = c(0.025, 0.975)
+  )
+)
+
+ans1_ci
+ans0
+```
+
+The bootstrap confidence intervals should be similar to the parametric
+confidence intervals returned by `confint()`. They will not be exactly
+identical because the bootstrap procedure is based on random resampling.
+
+### 3. Comparing serial and parallel execution
+
+```{r benchmark-problem3}
+set.seed(1234)
+
+serial_time <- system.time(
+  serial_result <- my_boot(
+    dat = simulation_data,
+    stat = my_stat,
+    R = 4000,
+    ncpus = 1L
+  )
+)
+
+set.seed(1234)
+
+parallel_time <- system.time(
+  parallel_result <- my_boot(
+    dat = simulation_data,
+    stat = my_stat,
+    R = 4000,
+    ncpus = 2L
+  )
+)
+
+serial_time
+parallel_time
+```
+
+The elapsed times can be compared directly.
+
+```{r speed-comparison}
+timing_comparison <- data.frame(
+  method = c("One core", "Two cores"),
+  elapsed_seconds = c(
+    unname(serial_time["elapsed"]),
+    unname(parallel_time["elapsed"])
+  )
+)
+
+timing_comparison
+
+speedup <- unname(serial_time["elapsed"]) /
+  unname(parallel_time["elapsed"])
+
+speedup
+```
+
+A speedup value greater than 1 indicates that the two-core version was faster.
+The exact performance will depend on the computer, operating system, workload,
+and overhead required to create and coordinate the worker processes.
