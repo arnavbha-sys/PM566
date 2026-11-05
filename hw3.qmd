@@ -1,0 +1,484 @@
+---
+title: "Assignment 3 - Text Mining"
+link-citations: true
+toc: true
+format:
+  html:
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(tidytext)
+library(scales)
+library(knitr)
+
+theme_set(theme_minimal(base_size = 12))
+
+# Read the PubMed dataset.
+# Place pubmed.csv in the same folder as this QMD file.
+pubmed_url <- paste0(
+  "https://raw.githubusercontent.com/",
+  "USCbiostats/data-science-data/master/03_pubmed/pubmed.csv"
+)
+
+pubmed <- read_csv(pubmed_url, show_col_types = FALSE)
+
+# Standardize column names in case capitalization differs.
+names(pubmed) <- tolower(names(pubmed))
+
+# Check that the required columns exist.
+required_columns <- c("term", "abstract")
+
+if (!all(required_columns %in% names(pubmed))) {
+  stop(
+    "The dataset must contain columns named 'term' and 'abstract'. ",
+    "Available columns are: ",
+    paste(names(pubmed), collapse = ", ")
+  )
+}
+
+# Remove observations that do not contain an abstract and create a unique
+# identifier for each abstract.
+pubmed <- pubmed |>
+  filter(!is.na(abstract), abstract != "") |>
+  mutate(
+    abstract_id = row_number(),
+    term = as.character(term)
+  )
+```
+
+## Text Mining
+
+### Question 1
+
+First, I counted the number of abstracts associated with each PubMed search
+term.
+
+```{r}
+#| label: abstract-counts
+
+abstract_counts <- pubmed |>
+  count(term, name = "number_of_abstracts") |>
+  arrange(desc(number_of_abstracts))
+
+abstract_counts |>
+  kable(
+    col.names = c("Search term", "Number of abstracts"),
+    caption = "Number of abstracts associated with each search term"
+  )
+```
+
+There are `r nrow(pubmed)` abstracts with nonmissing text in the dataset. The
+search term with the largest number of abstracts is
+**`r abstract_counts$term[1]`**, with
+`r comma(abstract_counts$number_of_abstracts[1])` abstracts.
+
+I next tokenized each abstract into individual words and counted the frequency
+of every token.
+
+```{r}
+#| label: tokenize-abstracts
+
+abstract_tokens <- pubmed |>
+  select(abstract_id, term, abstract) |>
+  unnest_tokens(word, abstract) |>
+  filter(
+    !is.na(word),
+    str_detect(word, "[a-zA-Z]")
+  )
+
+token_counts <- abstract_tokens |>
+  count(term, word, sort = TRUE)
+
+top5_raw <- token_counts |>
+  group_by(term) |>
+  slice_max(order_by = n, n = 5, with_ties = FALSE) |>
+  arrange(term, desc(n)) |>
+  ungroup()
+
+top5_raw |>
+  kable(
+    col.names = c("Search term", "Token", "Count"),
+    caption = "Five most common tokens for each search term"
+  )
+```
+
+The unfiltered results are dominated by frequently used English words such as
+articles, conjunctions, and prepositions. These words occur often because of
+sentence structure, but they provide relatively little information about the
+scientific subjects of the abstracts. The results demonstrate why stop-word
+removal is an important preprocessing step in text mining.
+
+### Question 2
+
+I removed common English stop words using the `stop_words` dataset supplied by
+the `tidytext` package.
+
+```{r}
+#| label: remove-stop-words
+
+tokens_without_stopwords <- abstract_tokens |>
+  anti_join(stop_words, by = "word")
+
+clean_token_counts <- tokens_without_stopwords |>
+  count(term, word, sort = TRUE)
+
+top5_clean <- clean_token_counts |>
+  group_by(term) |>
+  slice_max(order_by = n, n = 5, with_ties = FALSE) |>
+  arrange(term, desc(n)) |>
+  ungroup()
+
+top5_clean |>
+  kable(
+    col.names = c("Search term", "Token", "Count"),
+    caption = paste(
+      "Five most common tokens for each search term after removing",
+      "stop words"
+    )
+  )
+```
+
+Removing stop words substantially changes the most frequent tokens. The new
+lists contain more medically and scientifically meaningful terms that reflect
+the subjects represented by the PubMed searches. The highest-frequency
+non-stop-word token overall is **`r clean_token_counts$word[1]`**, which occurs
+`r comma(clean_token_counts$n[1])` times within the
+**`r clean_token_counts$term[1]`** search group.
+
+### Question 3
+
+I tokenized the abstracts into bigrams, meaning sequences of two consecutive
+words. I excluded bigrams in which both words were stop words. This retains
+phrases containing useful content while preventing combinations such as
+“of the” from dominating the results.
+
+```{r}
+#| label: bigram-analysis
+
+stop_word_vector <- stop_words |>
+  distinct(word) |>
+  pull(word)
+
+bigram_counts <- pubmed |>
+  select(abstract_id, term, abstract) |>
+  unnest_tokens(bigram, abstract, token = "ngrams", n = 2) |>
+  separate(
+    bigram,
+    into = c("word1", "word2"),
+    sep = " ",
+    remove = FALSE
+  ) |>
+  filter(
+    !is.na(word1),
+    !is.na(word2),
+    str_detect(word1, "[a-zA-Z]"),
+    str_detect(word2, "[a-zA-Z]"),
+    !(word1 %in% stop_word_vector & word2 %in% stop_word_vector)
+  ) |>
+  count(bigram, sort = TRUE)
+
+top10_bigrams <- bigram_counts |>
+  slice_max(order_by = n, n = 10, with_ties = FALSE)
+
+top10_bigrams |>
+  kable(
+    col.names = c("Bigram", "Count"),
+    caption = "Ten most common bigrams"
+  )
+```
+
+```{r}
+#| label: bigram-plot
+#| fig-width: 8
+#| fig-height: 5
+#| fig-cap: "Ten most common bigrams in the PubMed abstracts"
+
+top10_bigrams |>
+  mutate(bigram = fct_reorder(bigram, n)) |>
+  ggplot(aes(x = n, y = bigram)) +
+  geom_col(fill = "#990000", width = 0.75) +
+  geom_text(
+    aes(label = comma(n)),
+    hjust = -0.15,
+    size = 3.5
+  ) +
+  scale_x_continuous(
+    labels = comma,
+    expand = expansion(mult = c(0, 0.12))
+  ) +
+  labs(
+    title = "Most Common Bigrams",
+    subtitle = "Bigrams containing two stop words were excluded",
+    x = "Number of occurrences",
+    y = NULL
+  )
+```
+
+The most frequent bigram is **“`r top10_bigrams$bigram[1]`”**, appearing
+`r comma(top10_bigrams$n[1])` times. In contrast to the single-token analysis,
+the bigram analysis provides context by showing which words commonly occur
+together.
+
+### Question 4
+
+For the TF-IDF analysis, each search term was treated as a document. Term
+frequency measures how frequently a token appears within a search term, while
+inverse document frequency gives greater weight to tokens that are uncommon
+across the other search terms.
+
+```{r}
+#| label: tf-idf-analysis
+
+tf_idf_results <- clean_token_counts |>
+  bind_tf_idf(
+    term = word,
+    document = term,
+    n = n
+  )
+
+top5_tf_idf <- tf_idf_results |>
+  group_by(term) |>
+  slice_max(order_by = tf_idf, n = 5, with_ties = FALSE) |>
+  arrange(term, desc(tf_idf)) |>
+  ungroup()
+
+top5_tf_idf |>
+  select(term, word, n, tf, idf, tf_idf) |>
+  mutate(
+    tf = round(tf, 5),
+    idf = round(idf, 5),
+    tf_idf = round(tf_idf, 5)
+  ) |>
+  kable(
+    col.names = c(
+      "Search term",
+      "Token",
+      "Count",
+      "Term frequency",
+      "Inverse document frequency",
+      "TF-IDF"
+    ),
+    caption = "Five tokens with the highest TF-IDF for each search term"
+  )
+```
+
+The Question 1 results emphasize tokens that occur frequently, even if those
+tokens are common across several search groups. In comparison, TF-IDF
+emphasizes tokens that are both important within one search term and relatively
+uncommon in the other search terms. Therefore, the TF-IDF results are more
+useful for identifying words that distinguish one collection of abstracts from
+another.
+
+## Sentiment Analysis
+
+### Question 5
+
+I used the NRC lexicon to classify words into the sentiments anger,
+anticipation, disgust, fear, joy, sadness, surprise, and trust, as well as the
+broader positive and negative categories.
+
+```{r}
+#| label: nrc-sentiment
+
+nrc_lexicon <- get_sentiments("nrc")
+
+nrc_counts <- tokens_without_stopwords |>
+  inner_join(nrc_lexicon, by = "word") |>
+  count(term, sentiment, sort = TRUE)
+
+most_common_nrc <- nrc_counts |>
+  group_by(term) |>
+  slice_max(order_by = n, n = 1, with_ties = FALSE) |>
+  arrange(term) |>
+  ungroup()
+
+most_common_nrc |>
+  kable(
+    col.names = c("Search term", "Most common sentiment", "Count"),
+    caption = "Most common NRC sentiment for each search term"
+  )
+```
+
+When all NRC categories are retained, broad classifications such as positive
+or negative may be the most frequent because they apply to a large number of
+words. I therefore repeated the comparison after removing those two
+categories.
+
+```{r}
+#| label: nrc-without-positive-negative
+
+nrc_emotion_counts <- nrc_counts |>
+  filter(!sentiment %in% c("positive", "negative"))
+
+most_common_emotion <- nrc_emotion_counts |>
+  group_by(term) |>
+  slice_max(order_by = n, n = 1, with_ties = FALSE) |>
+  arrange(term) |>
+  ungroup()
+
+most_common_emotion |>
+  kable(
+    col.names = c("Search term", "Most common emotion", "Count"),
+    caption = paste(
+      "Most common NRC sentiment after excluding positive and negative"
+    )
+  )
+```
+
+Removing the positive and negative categories provides a more specific
+description of the emotions associated with the language in each group. The
+table shows which of the eight remaining NRC emotions is most common for each
+search term.
+
+The following visualization displays all eight specific emotion categories.
+
+```{r}
+#| label: nrc-plot
+#| fig-width: 9
+#| fig-height: 6
+#| fig-cap: "Distribution of NRC emotion categories by search term"
+
+nrc_emotion_counts |>
+  group_by(term) |>
+  mutate(proportion = n / sum(n)) |>
+  ungroup() |>
+  ggplot(
+    aes(
+      x = sentiment,
+      y = proportion,
+      fill = sentiment
+    )
+  ) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~term, scales = "free_y") +
+  scale_y_continuous(labels = percent_format()) +
+  labs(
+    title = "NRC Emotions in PubMed Abstracts",
+    x = "Emotion",
+    y = "Proportion of classified emotion words"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+### Question 6
+
+Finally, I used the AFINN lexicon. AFINN assigns sentiment words integer scores
+ranging from negative values for negative words to positive values for positive
+words. I calculated the mean AFINN score among matched sentiment words in each
+abstract.
+
+```{r}
+#| label: afinn-analysis
+
+afinn_url <- paste0(
+  "https://raw.githubusercontent.com/",
+  "fnielsen/afinn/master/afinn/data/AFINN-111.txt"
+)
+
+afinn_lexicon <- read_tsv(
+  afinn_url,
+  col_names = c("word", "value"),
+  show_col_types = FALSE
+)
+
+abstract_afinn <- abstract_tokens |>
+  inner_join(afinn_lexicon, by = "word") |>
+  group_by(abstract_id, term) |>
+  summarise(
+    average_positivity = mean(value),
+    matched_words = n(),
+    .groups = "drop"
+  )
+
+afinn_summary <- abstract_afinn |>
+  group_by(term) |>
+  summarise(
+    abstracts_with_scored_words = n(),
+    mean_score = mean(average_positivity),
+    median_score = median(average_positivity),
+    standard_deviation = sd(average_positivity),
+    .groups = "drop"
+  ) |>
+  arrange(desc(median_score))
+
+afinn_summary |>
+  mutate(
+    mean_score = round(mean_score, 3),
+    median_score = round(median_score, 3),
+    standard_deviation = round(standard_deviation, 3)
+  ) |>
+  kable(
+    col.names = c(
+      "Search term",
+      "Abstracts with scored words",
+      "Mean score",
+      "Median score",
+      "Standard deviation"
+    ),
+    caption = "Summary of average AFINN positivity scores"
+  )
+```
+
+```{r}
+#| label: afinn-plot
+#| fig-width: 9
+#| fig-height: 6
+#| fig-cap: "Average AFINN positivity score for each abstract, grouped by search term"
+
+abstract_afinn |>
+  ggplot(
+    aes(
+      x = fct_reorder(term, average_positivity, .fun = median),
+      y = average_positivity,
+      fill = term
+    )
+  ) +
+  geom_violin(
+    alpha = 0.55,
+    trim = FALSE,
+    show.legend = FALSE
+  ) +
+  geom_boxplot(
+    width = 0.16,
+    outlier.shape = NA,
+    alpha = 0.85,
+    show.legend = FALSE
+  ) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed",
+    color = "gray35"
+  ) +
+  coord_flip() +
+  labs(
+    title = "Distribution of AFINN Scores by Search Term",
+    subtitle = paste(
+      "Each score is the mean AFINN value among sentiment words",
+      "in one abstract"
+    ),
+    x = "Search term",
+    y = "Average positivity score"
+  )
+```
+
+The group with the highest median positivity score is
+**`r afinn_summary$term[1]`**, with a median score of
+`r round(afinn_summary$median_score[1], 3)`. The group with the lowest median
+score is **`r afinn_summary$term[nrow(afinn_summary)]`**, with a median score of
+`r round(afinn_summary$median_score[nrow(afinn_summary)], 3)`.
+
+The violin and box plots show both the centers and the distributions of the
+scores. Search terms whose boxes and median lines are noticeably higher or
+lower than those of the other groups have different sentiment patterns.
+However, these scores describe the language used in the abstracts and should
+not be interpreted as direct measurements of the authors' emotions.
