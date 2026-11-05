@@ -1,0 +1,821 @@
+---
+title: "Lab 10 - Interactive Visualization"
+link-citations: true
+toc: false
+---
+
+# Learning Goals
+
+- Read and process COVID-19 data from the New York Times GitHub repository
+- Create interactive graphs using `plot_ly()` and `ggplotly()`
+- Customize hover information and other plot features
+- Create choropleth maps using `plot_geo()`
+
+# Lab Description
+
+This lab explores relationships among COVID-19 cases, deaths, population sizes, and population densities across U.S. states.
+
+```{r setup, message=FALSE, echo=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(knitr)
+library(tidyr)
+library(zoo)
+
+opts_chunk$set(
+  warning = FALSE,
+  message = FALSE,
+  eval = TRUE,
+  echo = TRUE,
+  cache = FALSE,
+  include = TRUE,
+  fig.width = 7,
+  fig.align = "center",
+  fig.asp = 0.618,
+  out.width = "700px"
+)
+```
+
+# I. Reading and Processing the Data
+
+## 1. Read and merge the data
+
+```{r read-data}
+# Load COVID-19 state-level data from the New York Times
+cv_states <- read.csv(
+  "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-states.csv"
+)
+
+# Load state population data
+state_pops <- read.csv(
+  "https://raw.githubusercontent.com/COVID19Tracking/associated-data/master/us_census_data/us_census_2018_population_estimates_states.csv"
+)
+
+# Adjust column names in the population dataset
+state_pops$abb <- state_pops$state
+state_pops$state <- state_pops$state_name
+state_pops$state_name <- NULL
+
+# Merge the COVID-19 and population datasets by state name
+cv_states <- merge(
+  cv_states,
+  state_pops,
+  by = "state"
+)
+```
+
+## 2. Inspect the data
+
+```{r inspect-data}
+dim(cv_states)
+head(cv_states)
+tail(cv_states)
+str(cv_states)
+```
+
+## 3. Format the data
+
+```{r format-data}
+# Convert date to a Date variable
+cv_states$date <- as.Date(
+  cv_states$date,
+  format = "%Y-%m-%d"
+)
+
+# Arrange observations before creating factor levels
+cv_states <- cv_states |>
+  arrange(state, date)
+
+# Convert state and state abbreviation to factors
+state_list <- unique(cv_states$state)
+cv_states$state <- factor(
+  cv_states$state,
+  levels = state_list
+)
+
+abb_list <- unique(cv_states$abb)
+cv_states$abb <- factor(
+  cv_states$abb,
+  levels = abb_list
+)
+
+# Order the data first by state and then by date
+cv_states <- cv_states[
+  order(cv_states$state, cv_states$date),
+]
+
+# Confirm that the variables are formatted correctly
+str(cv_states)
+head(cv_states)
+tail(cv_states)
+
+# Inspect the ranges and distributions
+summary(cv_states)
+min(cv_states$date)
+max(cv_states$date)
+```
+
+## 4. Add new cases and deaths and correct outliers
+
+```{r create-new-counts}
+# Calculate daily new cases and deaths separately for each state
+for (i in seq_along(state_list)) {
+  cv_subset <- subset(
+    cv_states,
+    state == state_list[i]
+  )
+
+  cv_subset <- cv_subset[
+    order(cv_subset$date),
+  ]
+
+  # The first observation uses the first cumulative count
+  cv_subset$new_cases <- cv_subset$cases[1]
+  cv_subset$new_deaths <- cv_subset$deaths[1]
+
+  for (j in 2:nrow(cv_subset)) {
+    cv_subset$new_cases[j] <-
+      cv_subset$cases[j] -
+      cv_subset$cases[j - 1]
+
+    cv_subset$new_deaths[j] <-
+      cv_subset$deaths[j] -
+      cv_subset$deaths[j - 1]
+  }
+
+  cv_states$new_cases[
+    cv_states$state == state_list[i]
+  ] <- cv_subset$new_cases
+
+  cv_states$new_deaths[
+    cv_states$state == state_list[i]
+  ] <- cv_subset$new_deaths
+}
+
+# Focus on dates beginning June 1, 2021
+cv_states <- cv_states |>
+  filter(date >= as.Date("2021-06-01"))
+```
+
+### Examine possible outliers
+
+```{r inspect-outliers}
+p1 <- ggplot(
+  cv_states,
+  aes(
+    x = date,
+    y = new_cases,
+    color = state,
+    text = paste(
+      "State:", state,
+      "<br>Date:", date,
+      "<br>New cases:", new_cases
+    )
+  )
+) +
+  geom_point(size = 0.5, alpha = 0.5) +
+  labs(
+    title = "Daily New COVID-19 Cases",
+    x = "Date",
+    y = "New cases"
+  ) +
+  theme_minimal()
+
+ggplotly(p1, tooltip = "text")
+
+p2 <- ggplot(
+  cv_states,
+  aes(
+    x = date,
+    y = new_deaths,
+    color = state,
+    text = paste(
+      "State:", state,
+      "<br>Date:", date,
+      "<br>New deaths:", new_deaths
+    )
+  )
+) +
+  geom_point(size = 0.5, alpha = 0.5) +
+  labs(
+    title = "Daily New COVID-19 Deaths",
+    x = "Date",
+    y = "New deaths"
+  ) +
+  theme_minimal()
+
+ggplotly(p2, tooltip = "text")
+```
+
+Negative values represent retrospective corrections to previously reported totals. For this analysis, negative values are replaced with zero.
+
+```{r correct-outliers}
+# Replace negative new case or death counts with zero
+cv_states$new_cases[
+  cv_states$new_cases < 0
+] <- 0
+
+cv_states$new_deaths[
+  cv_states$new_deaths < 0
+] <- 0
+
+# Recalculate cumulative cases and deaths using the corrected counts
+for (i in seq_along(state_list)) {
+  cv_subset <- subset(
+    cv_states,
+    state == state_list[i]
+  )
+
+  cv_subset <- cv_subset[
+    order(cv_subset$date),
+  ]
+
+  if (nrow(cv_subset) == 0) {
+    next
+  }
+
+  # Preserve the cumulative total on the first retained date
+  cv_subset$cases <- cv_subset$cases[1]
+  cv_subset$deaths <- cv_subset$deaths[1]
+
+  if (nrow(cv_subset) >= 2) {
+    for (j in 2:nrow(cv_subset)) {
+      cv_subset$cases[j] <-
+        cv_subset$new_cases[j] +
+        cv_subset$cases[j - 1]
+
+      cv_subset$deaths[j] <-
+        cv_subset$new_deaths[j] +
+        cv_subset$deaths[j - 1]
+    }
+  }
+
+  cv_states$cases[
+    cv_states$state == state_list[i]
+  ] <- cv_subset$cases
+
+  cv_states$deaths[
+    cv_states$state == state_list[i]
+  ] <- cv_subset$deaths
+}
+
+# Calculate seven-day rolling averages separately within each state
+cv_states <- cv_states |>
+  group_by(state) |>
+  arrange(date, .by_group = TRUE) |>
+  mutate(
+    new_cases = round(
+      zoo::rollmean(
+        new_cases,
+        k = 7,
+        fill = NA,
+        align = "right"
+      ),
+      digits = 0
+    ),
+    new_deaths = round(
+      zoo::rollmean(
+        new_deaths,
+        k = 7,
+        fill = NA,
+        align = "right"
+      ),
+      digits = 0
+    )
+  ) |>
+  ungroup()
+```
+
+### Inspect the smoothed data
+
+```{r inspect-smoothed-data}
+p3 <- ggplot(
+  cv_states,
+  aes(
+    x = date,
+    y = new_deaths,
+    color = state,
+    text = paste(
+      "State:", state,
+      "<br>Date:", date,
+      "<br>Seven-day average deaths:", new_deaths
+    )
+  )
+) +
+  geom_line() +
+  geom_point(size = 0.5, alpha = 0.5) +
+  labs(
+    title = "Seven-Day Average of New COVID-19 Deaths",
+    x = "Date",
+    y = "New deaths"
+  ) +
+  theme_minimal()
+
+ggplotly(p3, tooltip = "text")
+```
+
+## 5. Add population-normalized variables
+
+```{r normalized-variables}
+cv_states <- cv_states |>
+  mutate(
+    per100k = round(
+      cases / population * 100000,
+      1
+    ),
+    newper100k = round(
+      new_cases / population * 100000,
+      1
+    ),
+    deathsper100k = round(
+      deaths / population * 100000,
+      1
+    ),
+    newdeathsper100k = round(
+      new_deaths / population * 100000,
+      1
+    ),
+    naive_CFR = if_else(
+      cases > 0,
+      round(deaths * 100 / cases, 2),
+      NA_real_
+    )
+  )
+
+# Create a dataset containing observations from the most recent date
+cv_states_today <- cv_states |>
+  filter(date == max(date, na.rm = TRUE))
+
+head(cv_states_today)
+```
+
+# II. Scatterplots
+
+## 6. Explore scatterplots using `plot_ly()`
+
+```{r interactive-scatterplots}
+# Population density versus total cases
+cv_states_today |>
+  plot_ly(
+    x = ~pop_density,
+    y = ~cases,
+    type = "scatter",
+    mode = "markers",
+    color = ~state,
+    size = ~population,
+    sizes = c(5, 70),
+    marker = list(
+      sizemode = "diameter",
+      opacity = 0.5
+    )
+  )
+
+# Remove District of Columbia because it is an extreme
+# population-density outlier
+cv_states_today_filter <- cv_states_today |>
+  filter(state != "District of Columbia")
+
+# Population density versus cases after filtering
+cv_states_today_filter |>
+  plot_ly(
+    x = ~pop_density,
+    y = ~cases,
+    type = "scatter",
+    mode = "markers",
+    color = ~state,
+    size = ~population,
+    sizes = c(5, 70),
+    marker = list(
+      sizemode = "diameter",
+      opacity = 0.5
+    )
+  )
+
+# Population density versus deaths per 100,000
+cv_states_today_filter |>
+  plot_ly(
+    x = ~pop_density,
+    y = ~deathsper100k,
+    type = "scatter",
+    mode = "markers",
+    color = ~state,
+    size = ~population,
+    sizes = c(5, 70),
+    marker = list(
+      sizemode = "diameter",
+      opacity = 0.5
+    )
+  )
+
+# Add customized hover information
+cv_states_today_filter |>
+  plot_ly(
+    x = ~pop_density,
+    y = ~deathsper100k,
+    type = "scatter",
+    mode = "markers",
+    color = ~state,
+    size = ~population,
+    sizes = c(5, 70),
+    marker = list(
+      sizemode = "diameter",
+      opacity = 0.5
+    ),
+    hoverinfo = "text",
+    text = ~paste(
+      paste(state, ":", sep = ""),
+      paste(
+        "Cases per 100k: ",
+        per100k,
+        sep = ""
+      ),
+      paste(
+        "Deaths per 100k: ",
+        deathsper100k,
+        sep = ""
+      ),
+      sep = "<br>"
+    )
+  ) |>
+  layout(
+    title = paste(
+      "Population-Normalized COVID-19 Deaths",
+      "versus Population Density"
+    ),
+    yaxis = list(
+      title = "Deaths per 100,000"
+    ),
+    xaxis = list(
+      title = "Population density"
+    ),
+    hovermode = "compare"
+  )
+```
+
+District of Columbia was removed because its population density is much higher than the population density of any state. Including it compresses the remaining observations and makes the pattern among states difficult to see.
+
+## 7. Explore the scatterplot trend using `ggplotly()`
+
+```{r scatterplot-trend}
+p4 <- ggplot(
+  cv_states_today_filter,
+  aes(
+    x = pop_density,
+    y = newdeathsper100k,
+    size = population,
+    text = paste(
+      "State:", state,
+      "<br>Population density:", round(pop_density, 1),
+      "<br>New deaths per 100k:", newdeathsper100k
+    )
+  )
+) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    linewidth = 0.9
+  ) +
+  labs(
+    title = paste(
+      "New COVID-19 Deaths per 100,000",
+      "versus Population Density"
+    ),
+    x = "Population density",
+    y = "New deaths per 100,000",
+    size = "Population"
+  ) +
+  theme_minimal()
+
+ggplotly(p4, tooltip = "text")
+```
+
+The fitted regression line summarizes the average relationship between population density and new deaths per 100,000. The interactive plot also shows that individual states can differ substantially from the overall trend.
+
+# III. Multiple Line Charts
+
+## 8. Plot CFR, cases, and deaths over time
+
+```{r line-charts}
+# Naive CFR for all states over time
+plot_ly(
+  cv_states,
+  x = ~date,
+  y = ~naive_CFR,
+  color = ~state,
+  type = "scatter",
+  mode = "lines",
+  hoverinfo = "text",
+  text = ~paste(
+    "State:", state,
+    "<br>Date:", date,
+    "<br>Naive CFR:", naive_CFR, "%"
+  )
+) |>
+  layout(
+    title = "Naive COVID-19 Case-Fatality Ratio by State",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Naive CFR (%)"),
+    hovermode = "closest"
+  )
+
+# Florida cases and deaths in the same plot
+florida_plot <- cv_states |>
+  filter(state == "Florida") |>
+  plot_ly(
+    x = ~date,
+    y = ~new_cases,
+    type = "scatter",
+    mode = "lines",
+    name = "New cases",
+    hoverinfo = "text",
+    text = ~paste(
+      "Date:", date,
+      "<br>New cases:", new_cases
+    )
+  ) |>
+  add_lines(
+    x = ~date,
+    y = ~new_deaths,
+    name = "New deaths",
+    hoverinfo = "text",
+    text = ~paste(
+      "Date:", date,
+      "<br>New deaths:", new_deaths
+    )
+  ) |>
+  layout(
+    title = "Seven-Day Average of New Cases and Deaths in Florida",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Seven-day average"),
+    hovermode = "x unified"
+  )
+
+florida_plot
+```
+
+### Estimate the delay between Florida’s peaks
+
+```{r florida-peak-delay}
+florida_peaks <- cv_states |>
+  filter(
+    state == "Florida",
+    !is.na(new_cases),
+    !is.na(new_deaths)
+  ) |>
+  summarise(
+    peak_case_date = date[which.max(new_cases)],
+    peak_cases = max(new_cases),
+    peak_death_date = date[which.max(new_deaths)],
+    peak_deaths = max(new_deaths),
+    delay_days = as.integer(
+      peak_death_date - peak_case_date
+    )
+  )
+
+kable(florida_peaks)
+```
+
+Based on the seven-day rolling averages, Florida's peak in deaths occurred `r florida_peaks$delay_days` days after its peak in cases.
+
+# IV. Heatmaps
+
+## 9. Heatmap of new cases
+
+```{r new-cases-heatmap}
+# Convert state, date, and new_cases into a matrix
+cv_states_mat <- cv_states |>
+  select(state, date, new_cases) |>
+  filter(date > as.Date("2021-06-15"))
+
+cv_states_mat2 <- cv_states_mat |>
+  pivot_wider(
+    names_from = state,
+    values_from = new_cases
+  ) |>
+  as.data.frame()
+
+rownames(cv_states_mat2) <- cv_states_mat2$date
+cv_states_mat2$date <- NULL
+cv_states_mat2 <- as.matrix(cv_states_mat2)
+
+plot_ly(
+  x = colnames(cv_states_mat2),
+  y = rownames(cv_states_mat2),
+  z = ~cv_states_mat2,
+  type = "heatmap",
+  showscale = TRUE,
+  colors = "Reds"
+) |>
+  layout(
+    title = "Seven-Day Average of New COVID-19 Cases",
+    xaxis = list(title = "State"),
+    yaxis = list(title = "Date")
+  )
+```
+
+Large-population states tend to stand out in the raw-count heatmap because they have more residents who could become infected.
+
+## Heatmap of new cases per 100,000
+
+```{r normalized-heatmap}
+cv_states_mat <- cv_states |>
+  select(state, date, newper100k) |>
+  filter(date > as.Date("2021-06-15"))
+
+cv_states_mat2 <- cv_states_mat |>
+  pivot_wider(
+    names_from = state,
+    values_from = newper100k
+  ) |>
+  as.data.frame()
+
+rownames(cv_states_mat2) <- cv_states_mat2$date
+cv_states_mat2$date <- NULL
+cv_states_mat2 <- as.matrix(cv_states_mat2)
+
+plot_ly(
+  x = colnames(cv_states_mat2),
+  y = rownames(cv_states_mat2),
+  z = ~cv_states_mat2,
+  type = "heatmap",
+  showscale = TRUE,
+  colors = "Reds"
+) |>
+  layout(
+    title = "New COVID-19 Cases per 100,000",
+    xaxis = list(title = "State"),
+    yaxis = list(title = "Date")
+  )
+```
+
+After adjusting for population, states with smaller populations but high infection rates become more visible. This provides a fairer comparison of COVID-19 activity among states.
+
+## Heatmap containing dates every two weeks
+
+```{r biweekly-heatmap}
+filter_dates <- seq(
+  as.Date("2021-06-15"),
+  as.Date("2021-11-01"),
+  by = "2 weeks"
+)
+
+cv_states_mat <- cv_states |>
+  select(state, date, newper100k) |>
+  filter(date %in% filter_dates)
+
+cv_states_mat2 <- cv_states_mat |>
+  pivot_wider(
+    names_from = state,
+    values_from = newper100k
+  ) |>
+  as.data.frame()
+
+rownames(cv_states_mat2) <- cv_states_mat2$date
+cv_states_mat2$date <- NULL
+cv_states_mat2 <- as.matrix(cv_states_mat2)
+
+plot_ly(
+  x = colnames(cv_states_mat2),
+  y = rownames(cv_states_mat2),
+  z = ~cv_states_mat2,
+  type = "heatmap",
+  showscale = TRUE,
+  colors = "Reds"
+) |>
+  layout(
+    title = "Biweekly COVID-19 Cases per 100,000",
+    xaxis = list(title = "State"),
+    yaxis = list(title = "Date")
+  )
+```
+
+Using dates separated by two weeks reduces visual crowding and makes changes in state-level case rates over time easier to compare.
+
+# V. Choropleth Maps
+
+## 10. Compare naive CFR by state
+
+```{r cfr-maps}
+pick_date <- as.Date("2021-10-15")
+today_date <- max(cv_states$date, na.rm = TRUE)
+
+# Data from October 15, 2021
+cfr_pick_date <- cv_states |>
+  filter(date == pick_date) |>
+  transmute(
+    state_name = as.character(state),
+    abb = as.character(abb),
+    naive_CFR,
+    cases,
+    deaths
+  )
+
+# Data from the most recent date
+cfr_today <- cv_states_today |>
+  transmute(
+    state_name = as.character(state),
+    abb = as.character(abb),
+    naive_CFR,
+    cases,
+    deaths
+  )
+
+# Use the same color limits for both maps
+shade_limit <- max(
+  c(
+    cfr_pick_date$naive_CFR,
+    cfr_today$naive_CFR
+  ),
+  na.rm = TRUE
+)
+
+# Create hover text for the first map
+cfr_pick_date <- cfr_pick_date |>
+  mutate(
+    hover = paste(
+      state_name,
+      "<br>Naive CFR:", naive_CFR, "%",
+      "<br>Cases:", format(cases, big.mark = ","),
+      "<br>Deaths:", format(deaths, big.mark = ",")
+    )
+  )
+
+# Create hover text for the second map
+cfr_today <- cfr_today |>
+  mutate(
+    hover = paste(
+      state_name,
+      "<br>Naive CFR:", naive_CFR, "%",
+      "<br>Cases:", format(cases, big.mark = ","),
+      "<br>Deaths:", format(deaths, big.mark = ",")
+    )
+  )
+
+set_map_details <- list(
+  scope = "usa",
+  projection = list(type = "albers usa"),
+  showlakes = TRUE,
+  lakecolor = toRGB("white")
+)
+
+fig_pick_date <- plot_geo(
+  cfr_pick_date,
+  locationmode = "USA-states"
+) |>
+  add_trace(
+    z = ~naive_CFR,
+    text = ~hover,
+    locations = ~abb,
+    type = "choropleth",
+    colors = "Purples",
+    zmin = 0,
+    zmax = shade_limit,
+    hoverinfo = "text",
+    colorbar = list(
+      title = "Naive CFR (%)"
+    )
+  ) |>
+  layout(
+    title = paste(
+      "Naive CFR by State on",
+      format(pick_date, "%B %d, %Y")
+    ),
+    geo = set_map_details
+  )
+
+fig_today <- plot_geo(
+  cfr_today,
+  locationmode = "USA-states"
+) |>
+  add_trace(
+    z = ~naive_CFR,
+    text = ~hover,
+    locations = ~abb,
+    type = "choropleth",
+    colors = "Purples",
+    zmin = 0,
+    zmax = shade_limit,
+    hoverinfo = "text",
+    colorbar = list(
+      title = "Naive CFR (%)"
+    )
+  ) |>
+  layout(
+    title = paste(
+      "Naive CFR by State on",
+      format(today_date, "%B %d, %Y")
+    ),
+    geo = set_map_details
+  )
+
+subplot(
+  fig_pick_date,
+  fig_today,
+  nrows = 2,
+  margin = 0.05
+)
+```
+
+The two maps use identical color limits, so differences in shading represent actual differences in the naive case-fatality ratio rather than changes in the scale. The maps show that CFR patterns changed over time and that the magnitude of the CFR varied considerably among states. These differences may reflect factors such as the timing of infection waves, vaccination coverage, population age, access to care, testing practices, and delays in reporting cases and deaths.
